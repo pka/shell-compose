@@ -1,0 +1,8 @@
+[package]
+name = "process-dispatcher"
+version = "0.1.0"
+edition = "2021"
+default-run = "cli"
+
+[dependencies]
+interprocess = "2.2.1"
