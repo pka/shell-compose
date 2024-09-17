@@ -23,6 +23,10 @@ pub enum IpcClientError {
     ReadError(#[from] IpcStreamReadError),
     #[error("Failed to write to socket: {0}")]
     WriteError(#[from] IpcStreamWriteError),
+    #[error("Ping failed")]
+    PingError,
+    #[error("Command returned error")]
+    CommandError,
 }
 
 #[derive(Error, Debug)]
