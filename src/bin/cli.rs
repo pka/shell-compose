@@ -1,4 +1,4 @@
-use interprocess::local_socket::{prelude::*, GenericFilePath, GenericNamespaced, Stream};
+use interprocess::local_socket::{prelude::*, GenericNamespaced, Stream};
 use std::env;
 use std::io::{BufRead, BufReader, Write};
 use std::process::{Child, Command};
@@ -29,12 +29,8 @@ impl DispatcherProc {
 // }
 
 fn main() -> std::io::Result<()> {
-    // Pick a name.
-    let name = if GenericNamespaced::is_supported() {
-        "example.sock".to_ns_name::<GenericNamespaced>()?
-    } else {
-        "/tmp/example.sock".to_fs_name::<GenericFilePath>()?
-    };
+    const SOCKET_NAME: &'static str = "process-dispatcher.sock";
+    let name = SOCKET_NAME.to_ns_name::<GenericNamespaced>()?;
 
     // Preemptively allocate a sizeable buffer for receiving. This size should be enough and
     // should be easy to find for the allocator.
