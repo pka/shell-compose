@@ -1,6 +1,5 @@
-use interprocess::local_socket::{prelude::*, GenericNamespaced, Stream};
+use process_dispatcher::*;
 use std::env;
-use std::io::{BufRead, BufReader, Write};
 use std::process::{Child, Command};
 use std::time::Duration;
 
@@ -28,43 +27,24 @@ impl DispatcherProc {
 //     }
 // }
 
-fn main() -> std::io::Result<()> {
-    const SOCKET_NAME: &'static str = "process-dispatcher.sock";
-    let name = SOCKET_NAME.to_ns_name::<GenericNamespaced>()?;
-
-    // Preemptively allocate a sizeable buffer for receiving. This size should be enough and
-    // should be easy to find for the allocator.
-    let mut buffer = String::with_capacity(128);
-
-    // Create our connection. This will block until the server accepts our connection, but will
-    // fail immediately if the server hasn't even started yet; somewhat similar to how happens
-    // with TCP, where connecting to a port that's not bound to any server will send a "connection
-    // refused" response, but that will take twice the ping, the roundtrip time, to reach the
-    // client.
-    let conn = if let Ok(conn) = Stream::connect(name.clone()) {
-        eprintln!("Connecting to dispatcher");
-        conn
-    } else {
+fn main() {
+    // if ipc_client_connect(SOCKET_NAME).is_err() {
+    if send_ipc_message(SOCKET_NAME, &Message::Hello).is_err() {
         eprintln!("Starting dispatcher");
         let _ = DispatcherProc::new();
         std::thread::sleep(Duration::from_secs(1));
-        Stream::connect(name)?
+    }
+
+    let text = Message::Text {
+        text: "Hello from client!".to_string(),
     };
 
-    // Wrap it into a buffered reader right away so that we could receive a single line out of it.
-    let mut conn = BufReader::new(conn);
+    let ping = Message::Ping;
 
-    // Send our message into the stream. This will finish either when the whole message has been
-    // sent or if a send operation returns an error. (`.get_mut()` is to get the sender,
-    // `BufReader` doesn't implement pass-through `Write`.)
-    conn.get_mut().write_all(b"Hello from client!\n")?;
+    send_ipc_message(SOCKET_NAME, &text).expect("Failed to connect to socket");
 
-    // We now employ the buffer we allocated prior and receive a single line, interpreting a
-    // newline character as an end-of-file (because local sockets cannot be portably shut down),
-    // verifying validity of UTF-8 on the fly.
-    conn.read_line(&mut buffer)?;
+    let response: Message =
+        send_ipc_query(SOCKET_NAME, &ping).expect("Failed to connect to socket");
 
-    // Print out the result, getting the newline for free!
-    print!("Server answered: {buffer}");
-    Ok(())
+    dbg!(response);
 }
