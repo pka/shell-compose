@@ -1,4 +1,4 @@
-use std::{any::Any, io};
+use std::io;
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -23,10 +23,6 @@ pub enum IpcServerError {
     FileError(io::Error),
     #[error("The socket is already in use by an instance of the current process.")]
     AlreadyInUseError,
-    #[error("Failed to spawn server thread: {0}")]
-    ThreadSpawnError(io::Error),
-    #[error("Failed to join server thread")]
-    ThreadJoinError(Box<dyn Any + Send + 'static>),
 }
 
 #[derive(Error, Debug)]

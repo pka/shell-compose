@@ -58,9 +58,7 @@ fn run_server() {
         },
         Some(|e| panic!("Incoming connection error: {e}")),
     )
-    .expect("Failed to start ipc listener")
-    .join()
-    .expect("Failed to join server thread");
+    .expect("Failed to start ipc listener");
 }
 
 struct Dispatcher {

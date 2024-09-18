@@ -5,7 +5,6 @@ use serde::de::DeserializeOwned;
 use serde::Serialize;
 use std::io;
 use std::io::prelude::*;
-use std::thread::JoinHandle;
 
 /// Attempts to spin up a thread that will listen for incoming connections on the given socket.
 ///
@@ -21,7 +20,7 @@ pub fn start_ipc_listener<F: FnMut(LocalSocketStream) + Send + 'static>(
     socket: &str,
     mut on_connection: F,
     on_connection_error: Option<fn(io::Error)>,
-) -> Result<JoinHandle<()>, IpcServerError> {
+) -> Result<(), IpcServerError> {
     let name = socket.to_ns_name::<GenericNamespaced>().unwrap();
     let listener = match ListenerOptions::new().name(name.clone()).create_sync() {
         Err(e) => return Err(IpcServerError::BindError(e)),
@@ -38,16 +37,11 @@ pub fn start_ipc_listener<F: FnMut(LocalSocketStream) + Send + 'static>(
         }
     };
 
-    let thread = std::thread::Builder::new()
-        .name(format!("ipc server '{socket}'"))
-        .spawn(move || {
-            for stream in listener.incoming().filter_map(error_handler) {
-                on_connection(stream);
-            }
-        })
-        .map_err(IpcServerError::ThreadSpawnError)?;
+    for stream in listener.incoming().filter_map(error_handler) {
+        on_connection(stream);
+    }
 
-    Ok(thread)
+    Ok(())
 }
 
 /// A wrapper around `start_ipc_listener`.
@@ -62,7 +56,7 @@ pub fn start_ipc_server<
     socket: &str,
     mut on_connection: F,
     on_connection_error: Option<fn(io::Error)>,
-) -> Result<JoinHandle<()>, IpcServerError> {
+) -> Result<(), IpcServerError> {
     start_ipc_listener(
         socket,
         move |mut stream| {
