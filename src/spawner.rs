@@ -1,6 +1,7 @@
 use crate::DispatcherError;
 use std::collections::VecDeque;
-use std::process::{Child, Command};
+use std::io::{BufRead, BufReader};
+use std::process::{Child, Command, Stdio};
 
 struct ChildProc {
     proc: Child,
@@ -16,12 +17,18 @@ impl ChildProc {
         let child = ChildProc {
             proc: Command::new(exe)
                 .args(cmd)
-                // .stdout(Stdio::piped())
-                // .stderr(Stdio::piped())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
                 .spawn()
                 .map_err(DispatcherError::ProcSpawnError)?,
         };
         Ok(child)
+    }
+    fn is_running(&mut self) -> bool {
+        match self.proc.try_wait() {
+            Ok(None) => true,
+            _ => false,
+        }
     }
 }
 
@@ -42,8 +49,6 @@ impl Spawner {
     pub fn run(&mut self, args: &Vec<String>) -> Result<(), DispatcherError> {
         let child = ChildProc::spawn(args)?;
         self.procs.push(child);
-        // Wait for output
-        std::thread::sleep(std::time::Duration::from_millis(500));
         Ok(())
     }
     pub fn ps(&mut self) -> Result<(), DispatcherError> {
@@ -54,6 +59,24 @@ impl Spawner {
                 Err(e) => format!("Error {e}"),
             };
             println!("PID: {} - {state}", child.proc.id());
+        }
+        Ok(())
+    }
+    pub fn log(&mut self) -> Result<(), DispatcherError> {
+        // TODO: all processes or a specific one
+        if let Some(child) = self.procs.get_mut(0) {
+            if !child.is_running() {
+                return Ok(());
+            }
+            let stdout = child.proc.stdout.take().unwrap();
+            let stdout_reader = BufReader::new(stdout);
+            let stderr = child.proc.stderr.take().unwrap();
+            let stderr_reader = BufReader::new(stderr);
+            stdout_reader
+                .lines()
+                .chain(stderr_reader.lines()) // FIXME: Appends after stdout
+                .filter_map(|line| line.ok())
+                .for_each(|line| println!("{}", line));
         }
         Ok(())
     }

@@ -17,6 +17,8 @@ pub enum Command {
     },
     /// List running commands
     Ps,
+    /// Show process logs
+    Logs,
 }
 
 /// IPC messages

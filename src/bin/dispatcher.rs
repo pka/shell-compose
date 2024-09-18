@@ -76,6 +76,10 @@ impl Dispatcher {
                 self.spawner.ps().unwrap();
                 Message::Ok
             }
+            Command::Logs => {
+                self.spawner.log().unwrap();
+                Message::Ok
+            }
         }
     }
 }
