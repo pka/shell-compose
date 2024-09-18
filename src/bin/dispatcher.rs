@@ -1,6 +1,12 @@
 use clap::Parser;
+use env_logger::{
+    fmt::style::{AnsiColor, Style},
+    Env,
+};
+use log::info;
 use process_dispatcher::*;
 use std::env;
+use std::io::Write;
 use std::process::{self, Child};
 use std::time::Duration;
 
@@ -28,16 +34,32 @@ impl DispatcherProc {
     }
 }
 
+fn init_logger() {
+    let mut builder = env_logger::Builder::from_env(Env::default().default_filter_or("info"));
+    builder.format(|buf, record| {
+        let target = record.target();
+        let time = buf.timestamp();
+        // let level = record.level();
+        let color = Style::new().fg_color(Some(AnsiColor::Magenta.into()));
+
+        writeln!(buf, "{color}{time} [{target}] {}{color:#}", record.args(),)
+    });
+
+    builder.init();
+}
+
 fn cli() -> Result<(), DispatcherError> {
     let cli = Cli::parse();
+    init_logger();
 
     // if ipc_client_connect(SOCKET_NAME).is_err() {
     if send_ipc_message(SOCKET_NAME, &Message::NoCommand).is_err() {
-        eprintln!("Starting dispatcher");
+        info!("Starting dispatcher");
         let dispatcher = DispatcherProc::spawn();
         dispatcher.wait(2000)?;
     }
 
+    info!("Sending command");
     let msg: Message = cli.into();
     let response: Message = send_ipc_query(SOCKET_NAME, &msg)?;
     match response {
@@ -47,6 +69,7 @@ fn cli() -> Result<(), DispatcherError> {
 }
 
 fn run_server() {
+    init_logger();
     let mut dispatcher = Dispatcher {
         spawner: Spawner::new(),
     };

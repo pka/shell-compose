@@ -1,4 +1,5 @@
 use crate::DispatcherError;
+use log::info;
 use std::collections::VecDeque;
 use std::io::{BufRead, BufReader};
 use std::process::{Child, Command, Stdio};
@@ -70,11 +71,12 @@ impl Spawner {
             let stdout_reader = BufReader::new(stdout);
             let stderr = child.proc.stderr.take().unwrap();
             let stderr_reader = BufReader::new(stderr);
+            let pid = child.proc.id().to_string();
             stdout_reader
                 .lines()
                 .chain(stderr_reader.lines()) // FIXME: Appends after stdout
                 .filter_map(|line| line.ok())
-                .for_each(|line| println!("{}", line));
+                .for_each(|line| info!(target: &pid, "{}", line));
         }
         Ok(())
     }
