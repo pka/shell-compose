@@ -5,6 +5,8 @@ use thiserror::Error;
 pub enum DispatcherError {
     #[error("Failed to spawn process: {0}")]
     ProcSpawnError(io::Error),
+    #[error("Failed to spawn process (timeout)")]
+    ProcSpawnTimeoutError,
     #[error("Invalid command")]
     InvalidCommandError,
     #[error("Ping failed")]
@@ -21,6 +23,8 @@ pub enum IpcServerError {
     BindError(io::Error),
     #[error("Failed to delete stale socket file: {0}")]
     FileError(io::Error),
+    #[error("Failed to resolve socket name: {0}")]
+    SocketNameError(io::Error),
     #[error("The socket is already in use by an instance of the current process.")]
     AlreadyInUseError,
 }
@@ -29,6 +33,8 @@ pub enum IpcServerError {
 pub enum IpcClientError {
     #[error("Failed to connect to socket: {0}")]
     ConnectError(#[from] io::Error),
+    #[error("Failed to resolve socket name: {0}")]
+    SocketNameError(io::Error),
     #[error("Failed to read from socket: {0}")]
     ReadError(#[from] IpcStreamReadError),
     #[error("Failed to write to socket: {0}")]

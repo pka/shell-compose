@@ -15,6 +15,17 @@ impl DispatcherProc {
             _proc: process::Command::new(exe).arg("serve").spawn().unwrap(),
         }
     }
+    fn wait(&self, max_ms: u64) -> Result<(), DispatcherError> {
+        let mut wait_ms = 0;
+        while send_ipc_message(SOCKET_NAME, &Message::NoCommand).is_err() {
+            if wait_ms >= max_ms {
+                return Err(DispatcherError::ProcSpawnTimeoutError);
+            }
+            std::thread::sleep(Duration::from_millis(50));
+            wait_ms += 50;
+        }
+        Ok(())
+    }
 }
 
 fn cli() -> Result<(), DispatcherError> {
@@ -23,14 +34,8 @@ fn cli() -> Result<(), DispatcherError> {
     // if ipc_client_connect(SOCKET_NAME).is_err() {
     if send_ipc_message(SOCKET_NAME, &Message::NoCommand).is_err() {
         eprintln!("Starting dispatcher");
-        let _ = DispatcherProc::spawn();
-        std::thread::sleep(Duration::from_secs(1));
-    }
-
-    let response: Message = send_ipc_query(SOCKET_NAME, &Message::Ping)?;
-    match response {
-        Message::Ok => {}
-        _ => Err(DispatcherError::PingError)?,
+        let dispatcher = DispatcherProc::spawn();
+        dispatcher.wait(2000)?;
     }
 
     let msg: Message = cli.into();
@@ -49,7 +54,6 @@ fn run_server() {
         SOCKET_NAME,
         move |message: Message| match message {
             Message::NoCommand => None,
-            Message::Ping => Some(Message::Ok),
             Message::Command(cmd) => Some(dispatcher.exec_command(cmd)),
             m => {
                 dbg!(m);

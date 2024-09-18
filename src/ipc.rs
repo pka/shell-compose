@@ -6,10 +6,7 @@ use serde::Serialize;
 use std::io;
 use std::io::prelude::*;
 
-/// Attempts to spin up a thread that will listen for incoming connections on the given socket.
-///
-/// It then creates a new thread where it will listen for incoming connections, and
-/// invoke the passed `handle_connection` function.
+/// Listen for incoming connections on the given socket.
 ///
 /// # Arguments
 ///
@@ -21,7 +18,9 @@ pub fn start_ipc_listener<F: FnMut(LocalSocketStream) + Send + 'static>(
     mut on_connection: F,
     on_connection_error: Option<fn(io::Error)>,
 ) -> Result<(), IpcServerError> {
-    let name = socket.to_ns_name::<GenericNamespaced>().unwrap();
+    let name = socket
+        .to_ns_name::<GenericNamespaced>()
+        .map_err(IpcServerError::SocketNameError)?;
     let listener = match ListenerOptions::new().name(name.clone()).create_sync() {
         Err(e) => return Err(IpcServerError::BindError(e)),
         Ok(listener) => listener,
@@ -95,7 +94,9 @@ pub fn send_ipc_query<TRequest: Serialize, TResponse: DeserializeOwned>(
 
 /// Connects to the socket and returns the stream.
 pub fn ipc_client_connect(socket_name: &str) -> Result<LocalSocketStream, IpcClientError> {
-    let name = socket_name.to_ns_name::<GenericNamespaced>().unwrap();
+    let name = socket_name
+        .to_ns_name::<GenericNamespaced>()
+        .map_err(IpcClientError::SocketNameError)?;
     LocalSocketStream::connect(name).map_err(IpcClientError::ConnectError)
 }
 

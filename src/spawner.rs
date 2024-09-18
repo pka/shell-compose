@@ -29,11 +29,11 @@ impl ChildProc {
     }
 }
 
-// impl Drop for ChildProc {
-//     fn drop(&mut self) {
-//         self.proc.kill().unwrap();
-//     }
-// }
+impl Drop for ChildProc {
+    fn drop(&mut self) {
+        self.proc.kill().unwrap();
+    }
+}
 
 #[derive(Default)]
 pub struct Spawner {

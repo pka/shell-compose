@@ -24,10 +24,9 @@ pub enum Command {
 /// IPC messages
 #[derive(Debug, Serialize, Deserialize)]
 pub enum Message {
-    Ping,             // -> Some(Ok)
-    Ok,               // -> None
     Command(Command), // -> Some(Ok)
     NoCommand,        // -> None
+    Ok,               // -> None
 }
 
 impl From<Cli> for Message {
