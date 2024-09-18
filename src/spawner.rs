@@ -8,8 +8,8 @@ struct ChildProc {
 }
 
 impl ChildProc {
-    fn spawn(args: &Vec<String>) -> Result<ChildProc, DispatcherError> {
-        let mut cmd = VecDeque::from(args.clone());
+    fn spawn(args: &[String]) -> Result<ChildProc, DispatcherError> {
+        let mut cmd = VecDeque::from(args.to_owned());
         let Some(exe) = cmd.pop_front() else {
             return Err(DispatcherError::InvalidCommandError);
         };
@@ -25,10 +25,7 @@ impl ChildProc {
         Ok(child)
     }
     fn is_running(&mut self) -> bool {
-        match self.proc.try_wait() {
-            Ok(None) => true,
-            _ => false,
-        }
+        matches!(self.proc.try_wait(), Ok(None))
     }
 }
 
@@ -38,15 +35,16 @@ impl ChildProc {
 //     }
 // }
 
+#[derive(Default)]
 pub struct Spawner {
     procs: Vec<ChildProc>,
 }
 
 impl Spawner {
     pub fn new() -> Self {
-        Spawner { procs: Vec::new() }
+        Spawner::default()
     }
-    pub fn run(&mut self, args: &Vec<String>) -> Result<(), DispatcherError> {
+    pub fn run(&mut self, args: &[String]) -> Result<(), DispatcherError> {
         let child = ChildProc::spawn(args)?;
         self.procs.push(child);
         Ok(())

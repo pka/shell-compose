@@ -8,4 +8,4 @@ pub use errors::*;
 pub use ipc::*;
 pub use spawner::*;
 
-pub const SOCKET_NAME: &'static str = "process-dispatcher.sock";
+pub const SOCKET_NAME: &str = "process-dispatcher.sock";
