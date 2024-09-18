@@ -5,14 +5,14 @@ use std::process::{self, Child};
 use std::time::Duration;
 
 struct DispatcherProc {
-    proc: Child,
+    _proc: Child,
 }
 
 impl DispatcherProc {
     fn spawn() -> DispatcherProc {
         let exe = env::current_exe().unwrap();
         DispatcherProc {
-            proc: process::Command::new(exe).arg("serve").spawn().unwrap(),
+            _proc: process::Command::new(exe).arg("serve").spawn().unwrap(),
         }
     }
 }
@@ -42,7 +42,7 @@ fn cli() -> Result<(), DispatcherError> {
 }
 
 fn run_server() {
-    let dispatcher = Dispatcher {
+    let mut dispatcher = Dispatcher {
         spawner: Spawner::new(),
     };
     start_ipc_server(
@@ -68,13 +68,16 @@ struct Dispatcher {
 }
 
 impl Dispatcher {
-    fn exec_command(&self, cmd: Command) -> Message {
+    fn exec_command(&mut self, cmd: Command) -> Message {
         match cmd {
             Command::Run { args } => {
                 self.spawner.run(&args).unwrap();
                 Message::Ok
             }
-            Command::Ps => Message::Ok,
+            Command::Ps => {
+                self.spawner.ps().unwrap();
+                Message::Ok
+            }
         }
     }
 }

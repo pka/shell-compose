@@ -17,9 +17,9 @@ use std::thread::JoinHandle;
 /// * `socket` - The socket name to listen on.
 /// * `handle_connection` - A function that will be invoked for each incoming connection.
 /// * `handle_error` - An optional function that will be invoked if there is an error accepting a connection.
-pub fn start_ipc_listener<F: Fn(LocalSocketStream) + Send + 'static>(
+pub fn start_ipc_listener<F: FnMut(LocalSocketStream) + Send + 'static>(
     socket: &str,
-    on_connection: F,
+    mut on_connection: F,
     on_connection_error: Option<fn(io::Error)>,
 ) -> Result<JoinHandle<()>, IpcServerError> {
     let name = socket.to_ns_name::<GenericNamespaced>().unwrap();
@@ -57,10 +57,10 @@ pub fn start_ipc_listener<F: Fn(LocalSocketStream) + Send + 'static>(
 pub fn start_ipc_server<
     TRequest: DeserializeOwned,
     TResponse: Serialize,
-    F: Fn(TRequest) -> Option<TResponse> + Send + 'static,
+    F: FnMut(TRequest) -> Option<TResponse> + Send + 'static,
 >(
     socket: &str,
-    on_connection: F,
+    mut on_connection: F,
     on_connection_error: Option<fn(io::Error)>,
 ) -> Result<JoinHandle<()>, IpcServerError> {
     start_ipc_listener(

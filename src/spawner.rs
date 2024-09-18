@@ -3,7 +3,7 @@ use std::collections::VecDeque;
 use std::process::{Child, Command};
 
 struct ChildProc {
-    _proc: Child,
+    proc: Child,
 }
 
 impl ChildProc {
@@ -14,7 +14,7 @@ impl ChildProc {
         };
         println!("Spawning {exe} {cmd:?}");
         let child = ChildProc {
-            _proc: Command::new(exe)
+            proc: Command::new(exe)
                 .args(cmd)
                 // .stdout(Stdio::piped())
                 // .stderr(Stdio::piped())
@@ -31,16 +31,30 @@ impl ChildProc {
 //     }
 // }
 
-pub struct Spawner {}
+pub struct Spawner {
+    procs: Vec<ChildProc>,
+}
 
 impl Spawner {
     pub fn new() -> Self {
-        Spawner {}
+        Spawner { procs: Vec::new() }
     }
-    pub fn run(&self, args: &Vec<String>) -> Result<(), DispatcherError> {
-        let _child = ChildProc::spawn(args)?;
+    pub fn run(&mut self, args: &Vec<String>) -> Result<(), DispatcherError> {
+        let child = ChildProc::spawn(args)?;
+        self.procs.push(child);
         // Wait for output
         std::thread::sleep(std::time::Duration::from_millis(500));
+        Ok(())
+    }
+    pub fn ps(&mut self) -> Result<(), DispatcherError> {
+        for child in &mut self.procs {
+            let state = match child.proc.try_wait() {
+                Ok(Some(status)) => format!("Exited with {status}"),
+                Ok(None) => "Running".to_string(),
+                Err(e) => format!("Error {e}"),
+            };
+            println!("PID: {} - {state}", child.proc.id());
+        }
         Ok(())
     }
 }
