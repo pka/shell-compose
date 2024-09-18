@@ -4,61 +4,53 @@ use std::env;
 use std::process::{self, Child};
 use std::time::Duration;
 
-pub struct DispatcherProc {
-    pub proc: Child,
+struct DispatcherProc {
+    proc: Child,
 }
 
 impl DispatcherProc {
-    pub fn new() -> DispatcherProc {
+    fn spawn() -> DispatcherProc {
         let exe = env::current_exe().unwrap();
         DispatcherProc {
-            proc: process::Command::new(exe)
-                .arg("serve")
-                // .stdin(Stdio::piped())
-                // .stdout(Stdio::piped())
-                .spawn()
-                .unwrap(),
+            proc: process::Command::new(exe).arg("serve").spawn().unwrap(),
         }
     }
 }
 
-// impl Drop for DispatcherProc {
-//     fn drop(&mut self) {
-//         self.proc.kill().unwrap();
-//     }
-// }
-
-fn cli() -> Result<(), IpcClientError> {
+fn cli() -> Result<(), DispatcherError> {
     let cli = Cli::parse();
 
     // if ipc_client_connect(SOCKET_NAME).is_err() {
     if send_ipc_message(SOCKET_NAME, &Message::NoCommand).is_err() {
         eprintln!("Starting dispatcher");
-        let _ = DispatcherProc::new();
+        let _ = DispatcherProc::spawn();
         std::thread::sleep(Duration::from_secs(1));
     }
 
     let response: Message = send_ipc_query(SOCKET_NAME, &Message::Ping)?;
     match response {
         Message::Ok => {}
-        _ => Err(IpcClientError::PingError)?,
+        _ => Err(DispatcherError::PingError)?,
     }
 
     let msg: Message = cli.into();
     let response: Message = send_ipc_query(SOCKET_NAME, &msg)?;
     match response {
         Message::Ok => Ok(()),
-        _ => Err(IpcClientError::CommandError),
+        _ => Err(DispatcherError::CommandError),
     }
 }
 
 fn run_server() {
+    let dispatcher = Dispatcher {
+        spawner: Spawner::new(),
+    };
     start_ipc_server(
         SOCKET_NAME,
-        |message: Message| match message {
+        move |message: Message| match message {
             Message::NoCommand => None,
             Message::Ping => Some(Message::Ok),
-            Message::Command(cmd) => Some(exec_command(cmd)),
+            Message::Command(cmd) => Some(dispatcher.exec_command(cmd)),
             m => {
                 dbg!(m);
                 None
@@ -71,12 +63,23 @@ fn run_server() {
     .expect("Failed to join server thread");
 }
 
-fn exec_command(cmd: Command) -> Message {
-    dbg!(&cmd);
-    Message::Ok
+struct Dispatcher {
+    spawner: Spawner,
 }
 
-fn main() -> Result<(), IpcClientError> {
+impl Dispatcher {
+    fn exec_command(&self, cmd: Command) -> Message {
+        match cmd {
+            Command::Run { args } => {
+                self.spawner.run(&args).unwrap();
+                Message::Ok
+            }
+            Command::Ps => Message::Ok,
+        }
+    }
+}
+
+fn main() -> Result<(), DispatcherError> {
     let args = std::env::args().collect::<Vec<_>>();
 
     if let Some("serve") = args.get(1).map(|s| s.as_str()) {

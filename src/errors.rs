@@ -2,6 +2,20 @@ use std::{any::Any, io};
 use thiserror::Error;
 
 #[derive(Error, Debug)]
+pub enum DispatcherError {
+    #[error("Failed to spawn process: {0}")]
+    ProcSpawnError(io::Error),
+    #[error("Invalid command")]
+    InvalidCommandError,
+    #[error("Ping failed")]
+    PingError,
+    #[error("Command returned error")]
+    CommandError,
+    #[error("Communication error: {0}")]
+    IpcClientError(#[from] IpcClientError),
+}
+
+#[derive(Error, Debug)]
 pub enum IpcServerError {
     #[error("Failed to bind to socket: {0}")]
     BindError(io::Error),
@@ -23,10 +37,6 @@ pub enum IpcClientError {
     ReadError(#[from] IpcStreamReadError),
     #[error("Failed to write to socket: {0}")]
     WriteError(#[from] IpcStreamWriteError),
-    #[error("Ping failed")]
-    PingError,
-    #[error("Command returned error")]
-    CommandError,
 }
 
 #[derive(Error, Debug)]
