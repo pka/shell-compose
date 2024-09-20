@@ -1,7 +1,9 @@
+use crate::log_color;
 use crate::DispatcherError;
+use chrono::{DateTime, Local, SecondsFormat};
 use log::info;
 use std::collections::VecDeque;
-use std::io::{BufRead, BufReader};
+use std::io::{BufRead, BufReader, Read};
 use std::process::{Child, Command, Stdio};
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -14,7 +16,12 @@ struct ChildProc {
     last_line: usize,
 }
 
-type OutputBuffer = Vec<String>; // TODO: timestamp, level
+struct LogLine {
+    ts: DateTime<Local>,
+    line: String,
+    // level
+}
+type OutputBuffer = Vec<LogLine>;
 
 impl ChildProc {
     fn spawn(args: &[String]) -> Result<Self, DispatcherError> {
@@ -36,23 +43,11 @@ impl ChildProc {
 
         let buffer = output.clone();
         let stdout = child.stdout.take().unwrap();
-        let _stdout_handle = thread::spawn(move || {
-            let reader = BufReader::new(stdout);
-            reader
-                .lines()
-                .filter_map(|line| line.ok())
-                .for_each(|line| buffer.lock().unwrap().push(line));
-        });
+        let _stdout_handle = thread::spawn(move || output_listener(BufReader::new(stdout), buffer));
 
         let buffer = output.clone();
         let stderr = child.stderr.take().unwrap();
-        let _stderr_handle = thread::spawn(move || {
-            let reader = BufReader::new(stderr);
-            reader
-                .lines()
-                .filter_map(|line| line.ok())
-                .for_each(|line| buffer.lock().unwrap().push(line));
-        });
+        let _stderr_handle = thread::spawn(move || output_listener(BufReader::new(stderr), buffer));
 
         let child_proc = ChildProc {
             proc: child,
@@ -70,6 +65,21 @@ impl Drop for ChildProc {
     fn drop(&mut self) {
         self.proc.kill().unwrap();
     }
+}
+
+fn output_listener<R: Read>(reader: BufReader<R>, buffer: Arc<Mutex<OutputBuffer>>) {
+    reader
+        .lines()
+        .filter_map(|line| line.ok())
+        .for_each(|line| {
+            if let Ok(mut buffer) = buffer.lock() {
+                let entry = LogLine {
+                    ts: Local::now(),
+                    line,
+                };
+                buffer.push(entry);
+            }
+        });
 }
 
 #[derive(Default)]
@@ -104,8 +114,11 @@ impl Spawner {
                 if let Ok(output) = child.output.lock() {
                     if output.len() > child.last_line {
                         let pid = child.proc.id().to_string();
-                        for line in output.iter().skip(child.last_line) {
-                            info!(target: &pid, "{}", line)
+                        for entry in output.iter().skip(child.last_line) {
+                            let dt = entry.ts.to_rfc3339_opts(SecondsFormat::Secs, true);
+                            let line = &entry.line;
+                            let color = log_color();
+                            println!("{color}{dt} [{pid}] {line}{color:#}")
                         }
                         child.last_line = output.len();
                     }

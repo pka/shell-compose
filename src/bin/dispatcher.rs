@@ -1,11 +1,6 @@
 use clap::Parser;
-use env_logger::{
-    fmt::style::{AnsiColor, Style},
-    Env,
-};
 use log::info;
 use process_dispatcher::*;
-use std::io::Write;
 use std::process::{self, Child};
 use std::time::Duration;
 use std::{env, thread};
@@ -32,20 +27,6 @@ impl DispatcherProc {
         }
         Ok(())
     }
-}
-
-fn init_logger() {
-    let mut builder = env_logger::Builder::from_env(Env::default().default_filter_or("info"));
-    builder.format(|buf, record| {
-        let target = record.target();
-        let time = buf.timestamp();
-        // let level = record.level();
-        let color = Style::new().fg_color(Some(AnsiColor::Magenta.into()));
-
-        writeln!(buf, "{color}{time} [{target}] {}{color:#}", record.args(),)
-    });
-
-    builder.init();
 }
 
 fn cli() -> Result<(), DispatcherError> {
