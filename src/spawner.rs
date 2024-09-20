@@ -1,7 +1,7 @@
 use crate::log_color;
 use crate::DispatcherError;
 use chrono::{DateTime, Local, SecondsFormat};
-use log::info;
+use job_scheduler_ng::{Job, JobScheduler};
 use std::collections::VecDeque;
 use std::io::{BufRead, BufReader, Read};
 use std::process::{Child, Command, Stdio};
@@ -29,7 +29,7 @@ impl ChildProc {
         let Some(exe) = cmd.pop_front() else {
             return Err(DispatcherError::InvalidCommandError);
         };
-        info!(target: "dispatcher", "Spawning {exe} {cmd:?}");
+        // info!(target: "dispatcher", "Spawning {exe} {cmd:?}");
 
         let mut child = Command::new(exe)
             .args(cmd)
@@ -87,7 +87,7 @@ fn output_listener<R: Read>(reader: BufReader<R>, error: bool, buffer: Arc<Mutex
 
 #[derive(Default)]
 pub struct Spawner {
-    procs: Vec<ChildProc>,
+    procs: Arc<Mutex<Vec<ChildProc>>>,
 }
 
 impl Spawner {
@@ -96,11 +96,31 @@ impl Spawner {
     }
     pub fn run(&mut self, args: &[String]) -> Result<(), DispatcherError> {
         let child = ChildProc::spawn(args)?;
-        self.procs.insert(0, child);
+        self.procs.lock().unwrap().insert(0, child);
+        Ok(())
+    }
+    pub fn run_at(&mut self, cron: &str, args: &[String]) -> Result<(), DispatcherError> {
+        let mut scheduler = JobScheduler::new();
+        let job: Vec<String> = args.into();
+        let procs = self.procs.clone();
+        scheduler.add(Job::new(cron.parse()?, move || {
+            let child = ChildProc::spawn(&job).unwrap();
+            procs.lock().unwrap().insert(0, child);
+        }));
+        let _handle = thread::spawn(move || loop {
+            // Should we use same scheduler and thread for all cron jobs?
+            scheduler.tick();
+            let wait_time = scheduler.time_till_next_job();
+            if wait_time == Duration::from_millis(0) {
+                // no future execution time -> exit
+                break;
+            }
+            std::thread::sleep(wait_time);
+        });
         Ok(())
     }
     pub fn ps(&mut self) -> Result<(), DispatcherError> {
-        for child in &mut self.procs {
+        for child in &mut self.procs.lock().unwrap().iter_mut() {
             let state = match child.proc.try_wait() {
                 Ok(Some(status)) => format!("Exited with {status}"),
                 Ok(None) => "Running".to_string(),
@@ -113,14 +133,14 @@ impl Spawner {
     pub fn log(&mut self) -> Result<(), DispatcherError> {
         loop {
             let mut running_childs = 0;
-            for (idx, child) in self.procs.iter_mut().enumerate() {
+            for child in self.procs.lock().unwrap().iter_mut() {
                 if let Ok(output) = child.output.lock() {
                     if output.len() > child.last_line {
                         let pid = child.proc.id().to_string();
                         for entry in output.iter().skip(child.last_line) {
                             let dt = entry.ts.to_rfc3339_opts(SecondsFormat::Secs, true);
                             let line = &entry.line;
-                            let color = log_color(idx, entry.error);
+                            let color = log_color(pid.parse().unwrap(), entry.error);
                             println!("{color}{dt} [{pid}] {line}{color:#}")
                         }
                         child.last_line = output.len();

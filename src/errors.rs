@@ -15,6 +15,8 @@ pub enum DispatcherError {
     CommandError,
     #[error("Communication error: {0}")]
     IpcClientError(#[from] IpcClientError),
+    #[error("Cron error: {0}")]
+    CronError(#[from] cron::error::Error),
 }
 
 #[derive(Error, Debug)]

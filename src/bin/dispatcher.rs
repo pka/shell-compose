@@ -75,11 +75,15 @@ struct Dispatcher {
 
 impl Dispatcher {
     fn exec_command(&mut self, cmd: Command) -> Message {
-        let _res = match cmd {
+        let res = match cmd {
             Command::Run { args } => self.spawner.run(&args),
+            Command::Runat { at, args } => self.spawner.run_at(&at, &args),
             Command::Ps => self.spawner.ps(),
             Command::Logs => self.spawner.log(),
         };
+        if let Err(e) = res {
+            println!("{e}");
+        }
         Message::Ok
     }
 }

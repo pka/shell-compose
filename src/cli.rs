@@ -15,6 +15,13 @@ pub enum Command {
         /// Command arguments
         args: Vec<String>,
     },
+    /// Execute shell command with cron schedule
+    Runat {
+        /// Cron expression
+        at: String,
+        /// Command arguments
+        args: Vec<String>,
+    },
     /// List running commands
     Ps,
     /// Show process logs

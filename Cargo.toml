@@ -8,8 +8,10 @@ bincode = "1.3.3"
 byteorder = "1.5.0"
 chrono = "0.4.38"
 clap = { version = "4.0.0", features = ["derive", "env", "wrap_help"] }
+cron = "0.12.1"
 env_logger = { version = "0.11.5", default-features = false, features = ["humantime", "auto-color", "color"] }
 interprocess = "2.2.1"
+job_scheduler_ng = "2.0.5"
 log = "0.4.22"
 serde = { version = "1.0.210", features = ["derive"] }
 thiserror = "1.0.63"
