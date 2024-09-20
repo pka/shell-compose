@@ -19,7 +19,7 @@ struct ChildProc {
 struct LogLine {
     ts: DateTime<Local>,
     line: String,
-    // level
+    error: bool,
 }
 type OutputBuffer = Vec<LogLine>;
 
@@ -43,11 +43,13 @@ impl ChildProc {
 
         let buffer = output.clone();
         let stdout = child.stdout.take().unwrap();
-        let _stdout_handle = thread::spawn(move || output_listener(BufReader::new(stdout), buffer));
+        let _stdout_handle =
+            thread::spawn(move || output_listener(BufReader::new(stdout), false, buffer));
 
         let buffer = output.clone();
         let stderr = child.stderr.take().unwrap();
-        let _stderr_handle = thread::spawn(move || output_listener(BufReader::new(stderr), buffer));
+        let _stderr_handle =
+            thread::spawn(move || output_listener(BufReader::new(stderr), true, buffer));
 
         let child_proc = ChildProc {
             proc: child,
@@ -67,7 +69,7 @@ impl Drop for ChildProc {
     }
 }
 
-fn output_listener<R: Read>(reader: BufReader<R>, buffer: Arc<Mutex<OutputBuffer>>) {
+fn output_listener<R: Read>(reader: BufReader<R>, error: bool, buffer: Arc<Mutex<OutputBuffer>>) {
     reader
         .lines()
         .filter_map(|line| line.ok())
@@ -75,6 +77,7 @@ fn output_listener<R: Read>(reader: BufReader<R>, buffer: Arc<Mutex<OutputBuffer
             if let Ok(mut buffer) = buffer.lock() {
                 let entry = LogLine {
                     ts: Local::now(),
+                    error,
                     line,
                 };
                 buffer.push(entry);
@@ -110,14 +113,14 @@ impl Spawner {
     pub fn log(&mut self) -> Result<(), DispatcherError> {
         loop {
             let mut running_childs = 0;
-            for child in self.procs.iter_mut() {
+            for (idx, child) in self.procs.iter_mut().enumerate() {
                 if let Ok(output) = child.output.lock() {
                     if output.len() > child.last_line {
                         let pid = child.proc.id().to_string();
                         for entry in output.iter().skip(child.last_line) {
                             let dt = entry.ts.to_rfc3339_opts(SecondsFormat::Secs, true);
                             let line = &entry.line;
-                            let color = log_color();
+                            let color = log_color(idx, entry.error);
                             println!("{color}{dt} [{pid}] {line}{color:#}")
                         }
                         child.last_line = output.len();
