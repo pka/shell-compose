@@ -3,27 +3,63 @@ use log::info;
 use std::collections::VecDeque;
 use std::io::{BufRead, BufReader};
 use std::process::{Child, Command, Stdio};
+use std::sync::{Arc, Mutex};
+use std::thread;
+use std::time::Duration;
 
 struct ChildProc {
     proc: Child,
+    output: Arc<Mutex<OutputBuffer>>,
+    /// Last output line displayed
+    last_line: usize,
 }
 
+type OutputBuffer = Vec<String>; // TODO: timestamp, level
+
 impl ChildProc {
-    fn spawn(args: &[String]) -> Result<ChildProc, DispatcherError> {
+    fn spawn(args: &[String]) -> Result<Self, DispatcherError> {
         let mut cmd = VecDeque::from(args.to_owned());
         let Some(exe) = cmd.pop_front() else {
             return Err(DispatcherError::InvalidCommandError);
         };
-        println!("Spawning {exe} {cmd:?}");
-        let child = ChildProc {
-            proc: Command::new(exe)
-                .args(cmd)
-                .stdout(Stdio::piped())
-                .stderr(Stdio::piped())
-                .spawn()
-                .map_err(DispatcherError::ProcSpawnError)?,
+        info!(target: "dispatcher", "Spawning {exe} {cmd:?}");
+
+        let mut child = Command::new(exe)
+            .args(cmd)
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .map_err(DispatcherError::ProcSpawnError)?;
+
+        // output listeners
+        let output = Arc::new(Mutex::new(OutputBuffer::new()));
+
+        let buffer = output.clone();
+        let stdout = child.stdout.take().unwrap();
+        let _stdout_handle = thread::spawn(move || {
+            let reader = BufReader::new(stdout);
+            reader
+                .lines()
+                .filter_map(|line| line.ok())
+                .for_each(|line| buffer.lock().unwrap().push(line));
+        });
+
+        let buffer = output.clone();
+        let stderr = child.stderr.take().unwrap();
+        let _stderr_handle = thread::spawn(move || {
+            let reader = BufReader::new(stderr);
+            reader
+                .lines()
+                .filter_map(|line| line.ok())
+                .for_each(|line| buffer.lock().unwrap().push(line));
+        });
+
+        let child_proc = ChildProc {
+            proc: child,
+            output,
+            last_line: 0,
         };
-        Ok(child)
+        Ok(child_proc)
     }
     fn is_running(&mut self) -> bool {
         matches!(self.proc.try_wait(), Ok(None))
@@ -47,7 +83,7 @@ impl Spawner {
     }
     pub fn run(&mut self, args: &[String]) -> Result<(), DispatcherError> {
         let child = ChildProc::spawn(args)?;
-        self.procs.push(child);
+        self.procs.insert(0, child);
         Ok(())
     }
     pub fn ps(&mut self) -> Result<(), DispatcherError> {
@@ -62,21 +98,26 @@ impl Spawner {
         Ok(())
     }
     pub fn log(&mut self) -> Result<(), DispatcherError> {
-        // TODO: all processes or a specific one
-        if let Some(child) = self.procs.get_mut(0) {
-            if !child.is_running() {
-                return Ok(());
+        loop {
+            let mut running_childs = 0;
+            for child in self.procs.iter_mut() {
+                if let Ok(output) = child.output.lock() {
+                    if output.len() > child.last_line {
+                        let pid = child.proc.id().to_string();
+                        for line in output.iter().skip(child.last_line) {
+                            info!(target: &pid, "{}", line)
+                        }
+                        child.last_line = output.len();
+                    }
+                }
+                if child.is_running() {
+                    running_childs += 1
+                }
             }
-            let stdout = child.proc.stdout.take().unwrap();
-            let stdout_reader = BufReader::new(stdout);
-            let stderr = child.proc.stderr.take().unwrap();
-            let stderr_reader = BufReader::new(stderr);
-            let pid = child.proc.id().to_string();
-            stdout_reader
-                .lines()
-                .chain(stderr_reader.lines()) // FIXME: Appends after stdout
-                .filter_map(|line| line.ok())
-                .for_each(|line| info!(target: &pid, "{}", line));
+            if running_childs == 0 {
+                break;
+            }
+            thread::sleep(Duration::from_millis(100));
         }
         Ok(())
     }

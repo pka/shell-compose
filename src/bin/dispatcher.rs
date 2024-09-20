@@ -5,10 +5,10 @@ use env_logger::{
 };
 use log::info;
 use process_dispatcher::*;
-use std::env;
 use std::io::Write;
 use std::process::{self, Child};
 use std::time::Duration;
+use std::{env, thread};
 
 struct DispatcherProc {
     _proc: Child,
@@ -27,7 +27,7 @@ impl DispatcherProc {
             if wait_ms >= max_ms {
                 return Err(DispatcherError::ProcSpawnTimeoutError);
             }
-            std::thread::sleep(Duration::from_millis(50));
+            thread::sleep(Duration::from_millis(50));
             wait_ms += 50;
         }
         Ok(())
@@ -94,20 +94,12 @@ struct Dispatcher {
 
 impl Dispatcher {
     fn exec_command(&mut self, cmd: Command) -> Message {
-        match cmd {
-            Command::Run { args } => {
-                self.spawner.run(&args).unwrap();
-                Message::Ok
-            }
-            Command::Ps => {
-                self.spawner.ps().unwrap();
-                Message::Ok
-            }
-            Command::Logs => {
-                self.spawner.log().unwrap();
-                Message::Ok
-            }
-        }
+        let _res = match cmd {
+            Command::Run { args } => self.spawner.run(&args),
+            Command::Ps => self.spawner.ps(),
+            Command::Logs => self.spawner.log(),
+        };
+        Message::Ok
     }
 }
 
