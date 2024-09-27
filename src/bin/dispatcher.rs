@@ -35,12 +35,12 @@ fn cli() -> Result<(), DispatcherError> {
 
     // if ipc_client_connect(SOCKET_NAME).is_err() {
     if send_ipc_message(SOCKET_NAME, &Message::NoCommand).is_err() {
-        info!("Starting dispatcher");
+        info!(target: "dispatcher", "Starting dispatcher");
         let dispatcher = DispatcherProc::spawn();
         dispatcher.wait(2000)?;
     }
 
-    info!("Sending command");
+    info!(target: "dispatcher", "Sending command");
     let msg: Message = cli.into();
     let response: Message = send_ipc_query(SOCKET_NAME, &msg)?;
     match response {

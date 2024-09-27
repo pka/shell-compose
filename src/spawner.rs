@@ -23,6 +23,15 @@ struct LogLine {
 }
 type OutputBuffer = Vec<LogLine>;
 
+impl LogLine {
+    fn log(&self, pid: u32) {
+        let dt = self.ts.to_rfc3339_opts(SecondsFormat::Secs, true);
+        let line = &self.line;
+        let color = log_color(pid as usize, self.error);
+        println!("{color}{dt} [{pid}] {line}{color:#}");
+    }
+}
+
 impl ChildProc {
     fn spawn(args: &[String]) -> Result<Self, DispatcherError> {
         let mut cmd = VecDeque::from(args.to_owned());
@@ -70,19 +79,16 @@ impl Drop for ChildProc {
 }
 
 fn output_listener<R: Read>(reader: BufReader<R>, error: bool, buffer: Arc<Mutex<OutputBuffer>>) {
-    reader
-        .lines()
-        .filter_map(|line| line.ok())
-        .for_each(|line| {
-            if let Ok(mut buffer) = buffer.lock() {
-                let entry = LogLine {
-                    ts: Local::now(),
-                    error,
-                    line,
-                };
-                buffer.push(entry);
-            }
-        });
+    reader.lines().map_while(Result::ok).for_each(|line| {
+        if let Ok(mut buffer) = buffer.lock() {
+            let entry = LogLine {
+                ts: Local::now(),
+                error,
+                line,
+            };
+            buffer.push(entry);
+        }
+    });
 }
 
 #[derive(Default)]
@@ -136,12 +142,9 @@ impl Spawner {
             for child in self.procs.lock().unwrap().iter_mut() {
                 if let Ok(output) = child.output.lock() {
                     if output.len() > child.last_line {
-                        let pid = child.proc.id().to_string();
+                        let pid = child.proc.id();
                         for entry in output.iter().skip(child.last_line) {
-                            let dt = entry.ts.to_rfc3339_opts(SecondsFormat::Secs, true);
-                            let line = &entry.line;
-                            let color = log_color(pid.parse().unwrap(), entry.error);
-                            println!("{color}{dt} [{pid}] {line}{color:#}")
+                            entry.log(pid);
                         }
                         child.last_line = output.len();
                     }
