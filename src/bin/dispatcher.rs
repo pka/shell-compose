@@ -1,6 +1,6 @@
 use clap::Parser;
 use log::info;
-use process_dispatcher::*;
+use shell_compose::*;
 use std::process::{self, Child};
 use std::time::Duration;
 use std::{env, thread};

@@ -10,4 +10,4 @@ pub use errors::*;
 pub use ipc::*;
 pub use spawner::*;
 
-pub const SOCKET_NAME: &str = "process-dispatcher.sock";
+pub const SOCKET_NAME: &str = "shell-compose.sock";

@@ -380,23 +380,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "process-dispatcher"
-version = "0.1.0"
-dependencies = [
- "bincode",
- "byteorder",
- "chrono",
- "clap",
- "cron",
- "env_logger",
- "interprocess",
- "job_scheduler_ng",
- "log",
- "serde",
- "thiserror",
-]
-
-[[package]]
 name = "quote"
 version = "1.0.37"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -442,6 +425,23 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn",
+]
+
+[[package]]
+name = "shell-compose"
+version = "0.1.0"
+dependencies = [
+ "bincode",
+ "byteorder",
+ "chrono",
+ "clap",
+ "cron",
+ "env_logger",
+ "interprocess",
+ "job_scheduler_ng",
+ "log",
+ "serde",
+ "thiserror",
 ]
 
 [[package]]
