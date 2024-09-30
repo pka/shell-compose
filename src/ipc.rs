@@ -1,4 +1,4 @@
-use crate::{IpcClientError, IpcServerError, IpcStreamReadError, IpcStreamWriteError};
+use crate::{IpcClientError, IpcServerError, IpcStreamReadError, IpcStreamWriteError, Message};
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use interprocess::local_socket::{prelude::*, GenericNamespaced, ListenerOptions};
 use serde::de::DeserializeOwned;
@@ -13,7 +13,7 @@ use std::io::prelude::*;
 /// * `socket` - The socket name to listen on.
 /// * `handle_connection` - A function that will be invoked for each incoming connection.
 /// * `handle_error` - An optional function that will be invoked if there is an error accepting a connection.
-pub fn start_ipc_listener<F: FnMut(LocalSocketStream) + Send + 'static>(
+pub fn start_ipc_listener<F: FnMut(IpcStream) + Send + 'static>(
     socket: &str,
     mut on_connection: F,
     on_connection_error: Option<fn(io::Error)>,
@@ -37,63 +37,15 @@ pub fn start_ipc_listener<F: FnMut(LocalSocketStream) + Send + 'static>(
     };
 
     for stream in listener.incoming().filter_map(error_handler) {
+        let stream = IpcStream { stream };
         on_connection(stream);
     }
 
     Ok(())
 }
 
-/// A wrapper around `start_ipc_listener`.
-///
-/// Rather than passing the LocalSocketStream directly to the `on_connection` callback,
-/// this function instead reads a deserializable object from the socket and passes that, then optionally responds with a serializable object.
-pub fn start_ipc_server<
-    TRequest: DeserializeOwned,
-    TResponse: Serialize,
-    F: FnMut(TRequest) -> Option<TResponse> + Send + 'static,
->(
-    socket: &str,
-    mut on_connection: F,
-    on_connection_error: Option<fn(io::Error)>,
-) -> Result<(), IpcServerError> {
-    start_ipc_listener(
-        socket,
-        move |mut stream| {
-            let request: TRequest = stream.read_serde().unwrap();
-
-            if let Some(response) = on_connection(request) {
-                stream.write_serde(&response).unwrap();
-            }
-        },
-        on_connection_error,
-    )
-}
-
-/// Connects to the socket and writes a serializable object to it.
-/// Meant to be used for requests that don't expect a response from the server.
-pub fn send_ipc_message<TRequest: Serialize>(
-    socket_name: &str,
-    request: &TRequest,
-) -> Result<(), IpcClientError> {
-    let mut stream = ipc_client_connect(socket_name)?;
-    stream.write_serde(&request)?;
-    Ok(())
-}
-
-/// Connect to the socket and write a serializable object to it, then immediately read a deserializable object from it,
-/// blocking until a response is received. Meant to be used for requests that expect a response from the server.
-pub fn send_ipc_query<TRequest: Serialize, TResponse: DeserializeOwned>(
-    socket_name: &str,
-    request: &TRequest,
-) -> Result<TResponse, IpcClientError> {
-    let mut stream = ipc_client_connect(socket_name)?;
-    stream.write_serde(&request)?;
-    let response: TResponse = stream.read_serde()?;
-    Ok(response)
-}
-
-/// Connects to the socket and returns the stream.
-pub fn ipc_client_connect(socket_name: &str) -> Result<LocalSocketStream, IpcClientError> {
+/// Connect to the socket and return the stream.
+fn ipc_client_connect(socket_name: &str) -> Result<LocalSocketStream, IpcClientError> {
     let name = socket_name
         .to_ns_name::<GenericNamespaced>()
         .map_err(IpcClientError::SocketNameError)?;
@@ -135,5 +87,48 @@ impl SocketExt for LocalSocketStream {
         self.write_all(&bytes)?;
 
         Ok(())
+    }
+}
+
+/// Communication stream
+pub struct IpcStream {
+    stream: LocalSocketStream,
+}
+
+impl IpcStream {
+    /// Connects to the socket and return the stream
+    /// CAUTION: After connecting, only one message is currently supported
+    pub fn connect(socket_name: &str) -> Result<Self, IpcClientError> {
+        let stream = ipc_client_connect(socket_name)?;
+        Ok(IpcStream { stream })
+    }
+    pub fn check_connection(socket_name: &str) -> Result<(), IpcClientError> {
+        IpcStream::connect(socket_name)?.send_message(&Message::NoCommand)?;
+        Ok(())
+    }
+    /// Send serializable object.
+    pub fn send_message<TRequest: Serialize>(
+        &mut self,
+        request: &TRequest,
+    ) -> Result<(), IpcClientError> {
+        self.stream.write_serde(&request)?;
+        Ok(())
+    }
+    /// Receive serializable object as response.
+    pub fn receive_message<TResponse: DeserializeOwned>(
+        &mut self,
+    ) -> Result<TResponse, IpcClientError> {
+        let response: TResponse = self.stream.read_serde()?;
+        Ok(response)
+    }
+    /// Send a serializable object and immediately read a deserializable object from it,
+    /// blocking until a response is received. Meant to be used for requests that expect a response from the server.
+    pub fn send_query<TRequest: Serialize, TResponse: DeserializeOwned>(
+        &mut self,
+        request: &TRequest,
+    ) -> Result<TResponse, IpcClientError> {
+        self.send_message(&request)?;
+        let response: TResponse = self.receive_message()?;
+        Ok(response)
     }
 }

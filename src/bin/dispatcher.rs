@@ -18,7 +18,7 @@ impl DispatcherProc {
     }
     fn wait(&self, max_ms: u64) -> Result<(), DispatcherError> {
         let mut wait_ms = 0;
-        while send_ipc_message(SOCKET_NAME, &Message::NoCommand).is_err() {
+        while IpcStream::check_connection(SOCKET_NAME).is_err() {
             if wait_ms >= max_ms {
                 return Err(DispatcherError::ProcSpawnTimeoutError);
             }
@@ -33,16 +33,17 @@ fn cli() -> Result<(), DispatcherError> {
     let cli = Cli::parse();
     init_logger();
 
-    // if ipc_client_connect(SOCKET_NAME).is_err() {
-    if send_ipc_message(SOCKET_NAME, &Message::NoCommand).is_err() {
+    if IpcStream::check_connection(SOCKET_NAME).is_err() {
         info!(target: "dispatcher", "Starting dispatcher");
         let dispatcher = DispatcherProc::spawn();
         dispatcher.wait(2000)?;
     }
 
     info!(target: "dispatcher", "Sending command");
+    let mut stream = IpcStream::connect(SOCKET_NAME)?;
     let msg: Message = cli.into();
-    let response: Message = send_ipc_query(SOCKET_NAME, &msg)?;
+    stream.send_message(&msg)?;
+    let response: Message = stream.receive_message()?;
     match response {
         Message::Ok => Ok(()),
         _ => Err(DispatcherError::CommandError),
@@ -54,14 +55,19 @@ fn run_server() {
     let mut dispatcher = Dispatcher {
         spawner: Spawner::new(),
     };
-    start_ipc_server(
+    start_ipc_listener(
         SOCKET_NAME,
-        move |message: Message| match message {
-            Message::NoCommand => None,
-            Message::Command(cmd) => Some(dispatcher.exec_command(cmd)),
-            m => {
-                dbg!(m);
-                None
+        move |mut stream| {
+            let request = stream.receive_message().unwrap();
+            if let Some(response) = match request {
+                Message::NoCommand => None,
+                Message::Command(cmd) => Some(dispatcher.exec_command(cmd)),
+                m => {
+                    dbg!(m);
+                    None
+                }
+            } {
+                stream.send_message(&response).unwrap();
             }
         },
         Some(|e| panic!("Incoming connection error: {e}")),
