@@ -40,7 +40,7 @@ fn cli() -> Result<(), DispatcherError> {
     let exec_command = ExecCommand::from_arg_matches(&matches);
     let query_command = QueryCommand::from_arg_matches(&matches);
 
-    init_logger();
+    init_cli_logger();
 
     if IpcStream::check_connection(SOCKET_NAME).is_err() {
         info!(target: "dispatcher", "Starting dispatcher");

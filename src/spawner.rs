@@ -49,7 +49,7 @@ impl ChildProc {
         let Some(exe) = cmd.pop_front() else {
             return Err(DispatcherError::InvalidCommandError);
         };
-        // info!(target: "dispatcher", "Spawning {exe} {cmd:?}");
+        // info!("Spawning {exe} {cmd:?}");
 
         let mut child = Command::new(exe)
             .args(cmd)
@@ -97,9 +97,15 @@ fn output_listener<R: Read>(
     buffer: Arc<Mutex<OutputBuffer>>,
 ) {
     reader.lines().map_while(Result::ok).for_each(|line| {
+        let ts = Local::now();
+        if error {
+            eprintln!("[{pid}] {line}");
+        } else {
+            println!("[{pid}] {line}");
+        }
         if let Ok(mut buffer) = buffer.lock() {
             let entry = LogLine {
-                ts: Local::now(),
+                ts,
                 pid,
                 error,
                 line,

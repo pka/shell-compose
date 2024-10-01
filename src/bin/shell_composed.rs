@@ -1,5 +1,5 @@
 use clap::{CommandFactory, FromArgMatches, Subcommand};
-use log::error;
+use log::{error, info};
 use shell_compose::*;
 
 fn run_server() {
@@ -8,7 +8,7 @@ fn run_server() {
     let matches = cli.clone().get_matches();
     let exec_command = ExecCommand::from_arg_matches(&matches);
 
-    init_logger();
+    init_daemon_logger();
 
     let mut dispatcher = Dispatcher::new();
 
@@ -56,6 +56,7 @@ impl Dispatcher {
         }
     }
     fn exec_command(&mut self, cmd: ExecCommand) -> Message {
+        info!("Executing {cmd:?}");
         let res = match cmd {
             ExecCommand::Run { args } => self.spawner.run(&args),
             ExecCommand::Runat { at, args } => self.spawner.run_at(&at, &args),
@@ -66,6 +67,7 @@ impl Dispatcher {
         Message::Ok
     }
     fn query_command(&mut self, cmd: QueryCommand, stream: &mut IpcStream) {
+        info!("Executing {cmd:?}");
         let res = match cmd {
             QueryCommand::Ps => self.spawner.ps(stream),
             QueryCommand::Logs => self.spawner.log(stream),

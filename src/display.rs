@@ -5,7 +5,7 @@ use env_logger::{
 };
 use std::io::Write;
 
-pub fn init_logger() {
+pub fn init_cli_logger() {
     const COLOR: Style = Style::new().fg_color(Some(Color::Ansi(AnsiColor::Magenta)));
     let mut builder = env_logger::Builder::from_env(Env::default().default_filter_or("info"));
     builder.format(|buf, record| {
@@ -14,6 +14,16 @@ pub fn init_logger() {
         // let level = record.level();
 
         writeln!(buf, "{COLOR}{time} [{target}] {}{COLOR:#}", record.args(),)
+    });
+
+    builder.init();
+}
+
+pub fn init_daemon_logger() {
+    let mut builder = env_logger::Builder::from_env(Env::default().default_filter_or("info"));
+    builder.format(|buf, record| {
+        let target = record.target();
+        writeln!(buf, "[{target}] {}", record.args(),)
     });
 
     builder.init();

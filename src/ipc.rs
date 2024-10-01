@@ -126,7 +126,7 @@ impl IpcStream {
     /// Send a message and immediately read response message,
     /// blocking until a response is received.
     pub fn send_query(&mut self, request: &Message) -> Result<Message, IpcClientError> {
-        self.send_message(&request)?;
+        self.send_message(request)?;
         let response = self.receive_message()?;
         Ok(response)
     }
