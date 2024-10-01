@@ -1,3 +1,4 @@
+use crate::{LogLine, PsInfo};
 use clap::{Parser, Subcommand};
 use serde::{Deserialize, Serialize};
 
@@ -32,10 +33,12 @@ pub enum QueryCommand {
 /// IPC messages
 #[derive(Debug, Serialize, Deserialize)]
 pub enum Message {
-    ExecCommand(ExecCommand),   // -> Some(Ok)
-    QueryCommand(QueryCommand), // -> Some(Ok)
-    NoCommand,                  // -> None
-    Ok,                         // -> None
+    Connect,
+    ExecCommand(ExecCommand),
+    QueryCommand(QueryCommand),
+    PsInfo(PsInfo),
+    LogLine(LogLine),
+    Ok,
 }
 
 impl From<ExecCommand> for Message {

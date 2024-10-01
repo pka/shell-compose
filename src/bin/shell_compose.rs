@@ -1,21 +1,23 @@
 use clap::{CommandFactory, FromArgMatches, Subcommand};
 use log::info;
 use shell_compose::*;
-use std::process::{self, Child};
+use std::process::{self, Stdio};
 use std::time::Duration;
 use std::{env, thread};
 
-struct DispatcherProc {
-    _proc: Child,
-}
+struct DispatcherProc;
 
 impl DispatcherProc {
     fn spawn() -> DispatcherProc {
         let mut exe = env::current_exe().unwrap().into_os_string();
         exe.push("d");
-        DispatcherProc {
-            _proc: process::Command::new(exe).spawn().unwrap(),
-        }
+        let _proc = process::Command::new(exe)
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            // .env("RUST_LOG", "debug")
+            .spawn()
+            .unwrap();
+        DispatcherProc
     }
     fn wait(&self, max_ms: u64) -> Result<(), DispatcherError> {
         let mut wait_ms = 0;
@@ -47,15 +49,25 @@ fn cli() -> Result<(), DispatcherError> {
     }
 
     info!(target: "dispatcher", "Sending command");
-    let mut stream = IpcStream::connect(SOCKET_NAME)?;
+    let mut stream = IpcStream::connect("cli", SOCKET_NAME)?;
     let msg: Message = exec_command
         .map(Into::into)
         .or_else(|_| query_command.map(Into::into))?;
     stream.send_message(&msg)?;
-    let response: Message = stream.receive_message()?;
-    match response {
-        Message::Ok => Ok(()),
-        _ => Err(DispatcherError::CommandError),
+    loop {
+        let response = stream.receive_message();
+        match response {
+            Ok(Message::Ok) => return Ok(()),
+            Ok(Message::PsInfo(info)) => {
+                println!("PID: {} - {}", info.pid, info.state);
+                return Ok(());
+            }
+            Ok(Message::LogLine(log_line)) => {
+                log_line.log();
+            }
+            Err(e) => return Err(e.into()),
+            _ => return Err(DispatcherError::CommandError),
+        }
     }
 }
 

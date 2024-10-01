@@ -1,8 +1,9 @@
 use crate::log_color;
-use crate::DispatcherError;
+use crate::{DispatcherError, IpcStream, Message};
 use chrono::{DateTime, Local, SecondsFormat};
 use job_scheduler_ng::{Job, JobScheduler};
 use log::info;
+use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
 use std::io::{BufRead, BufReader, Read};
 use std::process::{Child, Command, Stdio};
@@ -17,20 +18,29 @@ struct ChildProc {
     last_line: usize,
 }
 
-struct LogLine {
-    ts: DateTime<Local>,
-    line: String,
-    error: bool,
+#[derive(Clone, Serialize, Deserialize, Debug)]
+pub struct LogLine {
+    pub ts: DateTime<Local>,
+    pub pid: u32,
+    pub line: String,
+    pub error: bool,
 }
 type OutputBuffer = Vec<LogLine>;
 
 impl LogLine {
-    fn log(&self, pid: u32) {
+    pub fn log(&self) {
         let dt = self.ts.to_rfc3339_opts(SecondsFormat::Secs, true);
+        let pid = self.pid;
         let line = &self.line;
         let color = log_color(pid as usize, self.error);
         println!("{color}{dt} [{pid}] {line}{color:#}");
     }
+}
+
+#[derive(Clone, Serialize, Deserialize, Debug)]
+pub struct PsInfo {
+    pub pid: u32,
+    pub state: String,
 }
 
 impl ChildProc {
@@ -47,6 +57,7 @@ impl ChildProc {
             .stderr(Stdio::piped())
             .spawn()
             .map_err(DispatcherError::ProcSpawnError)?;
+        let pid = child.id();
 
         // output listeners
         let output = Arc::new(Mutex::new(OutputBuffer::new()));
@@ -54,12 +65,12 @@ impl ChildProc {
         let buffer = output.clone();
         let stdout = child.stdout.take().unwrap();
         let _stdout_handle =
-            thread::spawn(move || output_listener(BufReader::new(stdout), false, buffer));
+            thread::spawn(move || output_listener(BufReader::new(stdout), pid, false, buffer));
 
         let buffer = output.clone();
         let stderr = child.stderr.take().unwrap();
         let _stderr_handle =
-            thread::spawn(move || output_listener(BufReader::new(stderr), true, buffer));
+            thread::spawn(move || output_listener(BufReader::new(stderr), pid, true, buffer));
 
         let child_proc = ChildProc {
             proc: child,
@@ -79,11 +90,17 @@ impl Drop for ChildProc {
     }
 }
 
-fn output_listener<R: Read>(reader: BufReader<R>, error: bool, buffer: Arc<Mutex<OutputBuffer>>) {
+fn output_listener<R: Read>(
+    reader: BufReader<R>,
+    pid: u32,
+    error: bool,
+    buffer: Arc<Mutex<OutputBuffer>>,
+) {
     reader.lines().map_while(Result::ok).for_each(|line| {
         if let Ok(mut buffer) = buffer.lock() {
             let entry = LogLine {
                 ts: Local::now(),
+                pid,
                 error,
                 line,
             };
@@ -127,26 +144,38 @@ impl Spawner {
         });
         Ok(())
     }
-    pub fn ps(&mut self) -> Result<(), DispatcherError> {
+    pub fn ps(&mut self, stream: &mut IpcStream) -> Result<(), DispatcherError> {
         for child in &mut self.procs.lock().unwrap().iter_mut() {
             let state = match child.proc.try_wait() {
                 Ok(Some(status)) => format!("Exited with {status}"),
                 Ok(None) => "Running".to_string(),
                 Err(e) => format!("Error {e}"),
             };
-            println!("PID: {} - {state}", child.proc.id());
+            let info = PsInfo {
+                pid: child.proc.id(),
+                state,
+            };
+            if stream.send_message(&Message::PsInfo(info)).is_err() {
+                info!("Aborting ps command (stream error)");
+                break;
+            }
         }
         Ok(())
     }
-    pub fn log(&mut self) -> Result<(), DispatcherError> {
-        loop {
+    pub fn log(&mut self, stream: &mut IpcStream) -> Result<(), DispatcherError> {
+        'cmd: loop {
             let mut running_childs = 0;
             for child in self.procs.lock().unwrap().iter_mut() {
                 if let Ok(output) = child.output.lock() {
                     if output.len() > child.last_line {
-                        let pid = child.proc.id();
                         for entry in output.iter().skip(child.last_line) {
-                            entry.log(pid);
+                            if stream
+                                .send_message(&Message::LogLine(entry.clone()))
+                                .is_err()
+                            {
+                                info!("Aborting log command (stream error)");
+                                break 'cmd;
+                            }
                         }
                         child.last_line = output.len();
                     }
@@ -160,6 +189,7 @@ impl Spawner {
             }
             thread::sleep(Duration::from_millis(100));
         }
+        stream.send_message(&Message::Ok)?;
         Ok(())
     }
 }
