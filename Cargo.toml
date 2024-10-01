@@ -2,6 +2,7 @@
 name = "shell-compose"
 version = "0.1.0"
 edition = "2021"
+default-run = "shell-compose"
 
 [dependencies]
 bincode = "1.3.3"
@@ -17,5 +18,9 @@ serde = { version = "1.0.210", features = ["derive"] }
 thiserror = "1.0.63"
 
 [[bin]]
-path = "src/bin/dispatcher.rs"
+path = "src/bin/shell_compose.rs"
 name = "shell-compose"
+
+[[bin]]
+path = "src/bin/shell_composed.rs"
+name = "shell-composed"
