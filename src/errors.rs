@@ -3,6 +3,8 @@ use thiserror::Error;
 
 #[derive(Error, Debug)]
 pub enum DispatcherError {
+    #[error(transparent)]
+    CliArgsError(#[from] clap::Error),
     #[error("Failed to spawn process: {0}")]
     ProcSpawnError(io::Error),
     #[error("Failed to spawn process (timeout)")]
@@ -13,7 +15,7 @@ pub enum DispatcherError {
     PingError,
     #[error("Command returned error")]
     CommandError,
-    #[error("Communication error: {0}")]
+    #[error(transparent)]
     IpcClientError(#[from] IpcClientError),
     #[error("Cron error: {0}")]
     CronError(#[from] cron::error::Error),

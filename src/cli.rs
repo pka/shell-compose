@@ -3,13 +3,10 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
-pub struct Cli {
-    #[command(subcommand)]
-    command: Command,
-}
+pub struct Cli;
 
 #[derive(Subcommand, Debug, Serialize, Deserialize)]
-pub enum Command {
+pub enum ExecCommand {
     /// Execute shell command
     Run {
         /// Command arguments
@@ -22,6 +19,10 @@ pub enum Command {
         /// Command arguments
         args: Vec<String>,
     },
+}
+
+#[derive(Subcommand, Debug, Serialize, Deserialize)]
+pub enum QueryCommand {
     /// List running commands
     Ps,
     /// Show process logs
@@ -31,13 +32,20 @@ pub enum Command {
 /// IPC messages
 #[derive(Debug, Serialize, Deserialize)]
 pub enum Message {
-    Command(Command), // -> Some(Ok)
-    NoCommand,        // -> None
-    Ok,               // -> None
+    ExecCommand(ExecCommand),   // -> Some(Ok)
+    QueryCommand(QueryCommand), // -> Some(Ok)
+    NoCommand,                  // -> None
+    Ok,                         // -> None
 }
 
-impl From<Cli> for Message {
-    fn from(cli: Cli) -> Self {
-        Message::Command(cli.command)
+impl From<ExecCommand> for Message {
+    fn from(cmd: ExecCommand) -> Self {
+        Message::ExecCommand(cmd)
+    }
+}
+
+impl From<QueryCommand> for Message {
+    fn from(cmd: QueryCommand) -> Self {
+        Message::QueryCommand(cmd)
     }
 }

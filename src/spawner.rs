@@ -2,6 +2,7 @@ use crate::log_color;
 use crate::DispatcherError;
 use chrono::{DateTime, Local, SecondsFormat};
 use job_scheduler_ng::{Job, JobScheduler};
+use log::info;
 use std::collections::VecDeque;
 use std::io::{BufRead, BufReader, Read};
 use std::process::{Child, Command, Stdio};
@@ -119,6 +120,7 @@ impl Spawner {
             let wait_time = scheduler.time_till_next_job();
             if wait_time == Duration::from_millis(0) {
                 // no future execution time -> exit
+                info!("Ending cron job");
                 break;
             }
             std::thread::sleep(wait_time);

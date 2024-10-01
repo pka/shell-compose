@@ -1,4 +1,4 @@
-use clap::Parser;
+use clap::{CommandFactory, FromArgMatches, Subcommand};
 use log::info;
 use shell_compose::*;
 use std::process::{self, Child};
@@ -31,7 +31,13 @@ impl DispatcherProc {
 }
 
 fn cli() -> Result<(), DispatcherError> {
-    let cli = Cli::parse();
+    let cli = Cli::command();
+    let cli = ExecCommand::augment_subcommands(cli);
+    let cli = QueryCommand::augment_subcommands(cli);
+    let matches = cli.get_matches();
+    let exec_command = ExecCommand::from_arg_matches(&matches);
+    let query_command = QueryCommand::from_arg_matches(&matches);
+
     init_logger();
 
     if IpcStream::check_connection(SOCKET_NAME).is_err() {
@@ -42,7 +48,9 @@ fn cli() -> Result<(), DispatcherError> {
 
     info!(target: "dispatcher", "Sending command");
     let mut stream = IpcStream::connect(SOCKET_NAME)?;
-    let msg: Message = cli.into();
+    let msg: Message = exec_command
+        .map(Into::into)
+        .or_else(|_| query_command.map(Into::into))?;
     stream.send_message(&msg)?;
     let response: Message = stream.receive_message()?;
     match response {
