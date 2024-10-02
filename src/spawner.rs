@@ -1,10 +1,10 @@
 use crate::log_color;
 use crate::{DispatcherError, IpcStream, Message};
-use chrono::{DateTime, Local, SecondsFormat};
+use chrono::{DateTime, Local, SecondsFormat, TimeZone};
 use job_scheduler_ng::{Job, JobScheduler};
 use log::info;
 use serde::{Deserialize, Serialize};
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
 use std::io::{BufRead, BufReader, Read};
 use std::process::{Child, Command, Stdio};
 use std::sync::{Arc, Mutex};
@@ -14,8 +14,6 @@ use std::time::Duration;
 struct ChildProc {
     proc: Child,
     output: Arc<Mutex<OutputBuffer>>,
-    /// Last output line displayed
-    last_line: usize,
 }
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
@@ -25,7 +23,6 @@ pub struct LogLine {
     pub line: String,
     pub error: bool,
 }
-type OutputBuffer = Vec<LogLine>;
 
 impl LogLine {
     pub fn log(&self) {
@@ -34,6 +31,35 @@ impl LogLine {
         let line = &self.line;
         let color = log_color(pid as usize, self.error);
         println!("{color}{dt} [{pid}] {line}{color:#}");
+    }
+}
+
+struct OutputBuffer {
+    lines: VecDeque<LogLine>,
+    max_len: Option<usize>,
+}
+
+impl OutputBuffer {
+    pub fn new(max_len: Option<usize>) -> Self {
+        OutputBuffer {
+            max_len,
+            lines: VecDeque::new(),
+        }
+    }
+    pub fn push(&mut self, line: LogLine) {
+        self.lines.push_back(line);
+        if let Some(max_len) = self.max_len {
+            if self.lines.len() > max_len {
+                let _ = self.lines.pop_front();
+            }
+        }
+    }
+    pub fn lines_since(&self, last_seen: &mut DateTime<Local>) -> impl Iterator<Item = &LogLine> {
+        let ts = *last_seen;
+        if let Some(entry) = self.lines.back() {
+            *last_seen = entry.ts;
+        }
+        self.lines.iter().skip_while(move |entry| ts >= entry.ts)
     }
 }
 
@@ -60,7 +86,8 @@ impl ChildProc {
         let pid = child.id();
 
         // output listeners
-        let output = Arc::new(Mutex::new(OutputBuffer::new()));
+        let max_len = 200; // TODO: Make configurable
+        let output = Arc::new(Mutex::new(OutputBuffer::new(Some(max_len))));
 
         let buffer = output.clone();
         let stdout = child.stdout.take().unwrap();
@@ -75,7 +102,6 @@ impl ChildProc {
         let child_proc = ChildProc {
             proc: child,
             output,
-            last_line: 0,
         };
         Ok(child_proc)
     }
@@ -169,30 +195,33 @@ impl Spawner {
         Ok(())
     }
     pub fn log(&mut self, stream: &mut IpcStream) -> Result<(), DispatcherError> {
+        let mut last_seen_ts: HashMap<u32, DateTime<Local>> = HashMap::new(); // pid -> last_seen
         'cmd: loop {
             let mut running_childs = 0;
             for child in self.procs.lock().unwrap().iter_mut() {
                 if let Ok(output) = child.output.lock() {
-                    if output.len() > child.last_line {
-                        for entry in output.iter().skip(child.last_line) {
-                            if stream
-                                .send_message(&Message::LogLine(entry.clone()))
-                                .is_err()
-                            {
-                                info!("Aborting log command (stream error)");
-                                break 'cmd;
-                            }
+                    let last_seen = last_seen_ts
+                        .entry(child.proc.id())
+                        .or_insert(Local.timestamp_opt(0, 0).unwrap());
+                    for entry in output.lines_since(last_seen) {
+                        if stream
+                            .send_message(&Message::LogLine(entry.clone()))
+                            .is_err()
+                        {
+                            info!("Aborting log command (stream error)");
+                            break 'cmd;
                         }
-                        child.last_line = output.len();
                     }
                 }
                 if child.is_running() {
                     running_childs += 1
                 }
             }
+            // End following logs when no process is running
             if running_childs == 0 {
                 break;
             }
+            // Wait for new output
             thread::sleep(Duration::from_millis(100));
         }
         stream.send_message(&Message::Ok)?;
