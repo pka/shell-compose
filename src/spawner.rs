@@ -1,5 +1,4 @@
-use crate::log_color;
-use crate::{DispatcherError, IpcStream, Message};
+use crate::{log_color, DispatcherError, IpcStream, Justfile, Message};
 use chrono::{DateTime, Local, SecondsFormat, TimeZone};
 use job_scheduler_ng::{Job, JobScheduler};
 use log::info;
@@ -174,6 +173,18 @@ impl Spawner {
             }
             std::thread::sleep(wait_time);
         });
+        Ok(())
+    }
+    pub fn start(&mut self, service: &str) -> Result<(), DispatcherError> {
+        self.run(vec!["just".to_string(), service.to_string()].as_slice())
+    }
+    pub fn up(&mut self, group: &str) -> Result<(), DispatcherError> {
+        if let Ok(justfile) = Justfile::parse() {
+            let recipes = justfile.group_recipes(group);
+            for recipe in recipes {
+                self.start(&recipe)?;
+            }
+        }
         Ok(())
     }
     pub fn ps(&mut self, stream: &mut IpcStream) -> Result<(), DispatcherError> {

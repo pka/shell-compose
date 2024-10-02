@@ -56,10 +56,12 @@ impl Dispatcher {
         }
     }
     fn exec_command(&mut self, cmd: ExecCommand) -> Message {
-        info!("Executing {cmd:?}");
+        info!("Executing `{cmd:?}`");
         let res = match cmd {
             ExecCommand::Run { args } => self.spawner.run(&args),
             ExecCommand::Runat { at, args } => self.spawner.run_at(&at, &args),
+            ExecCommand::Start { service } => self.spawner.start(&service),
+            ExecCommand::Up { group } => self.spawner.up(&group),
         };
         if let Err(e) = res {
             error!("{e}");
@@ -67,7 +69,7 @@ impl Dispatcher {
         Message::Ok
     }
     fn query_command(&mut self, cmd: QueryCommand, stream: &mut IpcStream) {
-        info!("Executing {cmd:?}");
+        info!("Executing `{cmd:?}`");
         let res = match cmd {
             QueryCommand::Ps => self.spawner.ps(stream),
             QueryCommand::Logs => self.spawner.log(stream),

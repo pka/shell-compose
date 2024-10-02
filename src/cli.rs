@@ -20,6 +20,16 @@ pub enum ExecCommand {
         /// Command arguments
         args: Vec<String>,
     },
+    /// Start service
+    Start {
+        /// Service name
+        service: String,
+    },
+    /// Start service group
+    Up {
+        /// Service group name
+        group: String,
+    },
 }
 
 #[derive(Subcommand, Debug, Serialize, Deserialize)]
