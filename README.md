@@ -2,6 +2,8 @@
 
 Shell Compose is a lightweight background process runner for long-running or scheduled tasks.
 
+![Shell Compose](screencast.gif)
+
 ## Features
 
 * Scheduling
