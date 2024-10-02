@@ -1,6 +1,6 @@
 # Shell Compose
 
-Shell Compose is a lightweight background runner for long-running or scheduled tasks.
+Shell Compose is a lightweight background process runner for long-running or scheduled tasks.
 
 ## Features
 
@@ -28,7 +28,8 @@ Task can have dependencies and variables loaded from `.env` files.
 
 Example:
 
-```
+```just
+# Simulate data processing
 [group('autostart')]
 processing:
   #!/usr/bin/env bash
@@ -39,12 +40,14 @@ processing:
   done
   echo Processing finished
 
+# Play sounds from MQTT queue
 [group('autostart')]
 play:
   #!/usr/bin/env bash
-  while read sound; do
+  set -euo pipefail
+  mosquitto_sub -t room/speaker | while read sound; do
     aplay sounds/$sound
-  done < <(mosquitto_sub -t room/speaker)
+  done
 ```
 
 Running a `just` recipe:

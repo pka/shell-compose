@@ -12,8 +12,8 @@ use std::thread::JoinHandle;
 /// Child process controller
 pub struct Runner {
     pub proc: Child,
-    stdout_handle: Option<JoinHandle<DateTime<Local>>>,
     info: ProcInfo,
+    stdout_handle: Option<JoinHandle<DateTime<Local>>>,
     pub output: Arc<Mutex<OutputBuffer>>,
 }
 
@@ -132,8 +132,8 @@ impl Runner {
 
         let child_proc = Runner {
             proc: child,
-            stdout_handle: Some(stdout_handle),
             info,
+            stdout_handle: Some(stdout_handle),
             output,
         };
         Ok(child_proc)

@@ -131,7 +131,6 @@ impl Dispatcher {
     fn log(&mut self, stream: &mut IpcStream) -> Result<(), DispatcherError> {
         let mut last_seen_ts: HashMap<u32, DateTime<Local>> = HashMap::new(); // pid -> last_seen
         'cmd: loop {
-            let mut running_childs = 0;
             for child in self.procs.lock().unwrap().iter_mut() {
                 // TODO: buffered log lines should be sorted by time instead by process+time
                 if let Ok(output) = child.output.lock() {
@@ -148,13 +147,6 @@ impl Dispatcher {
                         }
                     }
                 }
-                if child.is_running() {
-                    running_childs += 1
-                }
-            }
-            // End following logs when no process is running
-            if running_childs == 0 {
-                break;
             }
             // Wait for new output
             thread::sleep(Duration::from_millis(50));
