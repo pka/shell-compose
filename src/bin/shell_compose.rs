@@ -53,11 +53,20 @@ fn cli() -> Result<(), DispatcherError> {
         .map(Into::into)
         .or_else(|_| query_command.map(Into::into))?;
     stream.send_message(&msg)?;
+    let mut proc_infos = Vec::new();
     loop {
         let response = stream.receive_message();
         match response {
             Ok(Message::Ok) => {
-                info!(target: "dispatcher", "Command successful");
+                match msg {
+                    Message::ExecCommand(_) => {
+                        info!(target: "dispatcher", "Command successful");
+                    }
+                    Message::QueryCommand(QueryCommand::Ps) => {
+                        proc_info_table(&proc_infos);
+                    }
+                    _ => {}
+                }
                 return Ok(());
             }
             Ok(Message::Err(msg)) => {
@@ -65,8 +74,7 @@ fn cli() -> Result<(), DispatcherError> {
                 return Ok(());
             }
             Ok(Message::PsInfo(info)) => {
-                println!("PID: {} - {}", info.pid, info.state);
-                return Ok(());
+                proc_infos.push(info);
             }
             Ok(Message::LogLine(log_line)) => {
                 log_line.log();

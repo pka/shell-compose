@@ -1,4 +1,6 @@
-use chrono::{Local, SecondsFormat};
+use crate::{ProcInfo, ProcStatus};
+use chrono::Local;
+use comfy_table::{presets::UTF8_FULL, ContentArrangement, Table};
 use env_logger::{
     fmt::style::{AnsiColor, Color, RgbColor, Style},
     Env,
@@ -86,6 +88,46 @@ pub fn log_color(idx: usize, err: bool) -> &'static Style {
 pub fn log_info(text: &str) {
     const COLOR: Style = Style::new().fg_color(Some(Color::Ansi(AnsiColor::Magenta)));
 
-    let time = Local::now().to_rfc3339_opts(SecondsFormat::Secs, true);
+    let time = Local::now().format("%F %T%.3f");
     println!("{COLOR}{time} [dispatcher] {text}{COLOR:#}")
+}
+
+pub fn proc_info_table(proc_infos: &[ProcInfo]) {
+    const EMPTY: String = String::new();
+
+    fn clip_str(text: &str, max_len: usize) -> String {
+        if text.len() > max_len {
+            format!("{}...", &text[..max_len.max(3) - 3])
+        } else {
+            text.to_string()
+        }
+    }
+
+    let mut table = Table::new();
+    table
+        .load_preset(UTF8_FULL)
+        .set_header(vec!["PID", "Status", "Command", "Start", "End"])
+        .set_content_arrangement(ContentArrangement::DynamicFullWidth)
+        .add_rows(proc_infos.iter().map(|info| {
+            let status = match &info.state {
+                ProcStatus::ExitOk => "Success".to_string(),
+                ProcStatus::ExitErr(code) => format!("Error {code}"),
+                ProcStatus::Unknown(err) => clip_str(err, 20),
+                st => format!("{st:?}"),
+            };
+            let end = if let Some(ts) = info.end {
+                format!("{}", ts.format("%F %T"))
+            } else {
+                EMPTY
+            };
+            vec![
+                format!("{}", info.pid),
+                status,
+                clip_str(&info.command, 30),
+                format!("{}", info.start.format("%F %T")),
+                end,
+            ]
+        }));
+
+    println!("{table}");
 }

@@ -1,4 +1,4 @@
-use crate::{DispatcherError, LogLine, PsInfo};
+use crate::{DispatcherError, LogLine, ProcInfo};
 use clap::{Parser, Subcommand};
 use serde::{Deserialize, Serialize};
 
@@ -46,7 +46,7 @@ pub enum Message {
     Connect,
     ExecCommand(ExecCommand),
     QueryCommand(QueryCommand),
-    PsInfo(PsInfo),
+    PsInfo(ProcInfo),
     LogLine(LogLine),
     Ok,
     Err(String),

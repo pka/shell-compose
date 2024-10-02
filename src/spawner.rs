@@ -8,12 +8,40 @@ use std::io::{BufRead, BufReader, Read};
 use std::process::{Child, Command, Stdio};
 use std::sync::{Arc, Mutex};
 use std::thread;
+use std::thread::JoinHandle;
 use std::time::Duration;
 
 /// Child process running commands
 struct ChildProc {
     proc: Child,
+    stdout_handle: Option<JoinHandle<DateTime<Local>>>,
+    info: ProcInfo,
     output: Arc<Mutex<OutputBuffer>>,
+}
+
+/// Process information
+#[derive(Clone, Serialize, Deserialize, Debug)]
+pub struct ProcInfo {
+    pub pid: u32,
+    pub command: String,
+    pub state: ProcStatus,
+    pub start: DateTime<Local>,
+    pub end: Option<DateTime<Local>>,
+}
+
+#[derive(Clone, Serialize, Deserialize, Debug)]
+pub enum ProcStatus {
+    Spawned,
+    Running,
+    ExitOk,
+    ExitErr(i32),
+    Unknown(String),
+}
+
+impl ProcStatus {
+    fn exited(&self) -> bool {
+        matches!(self, ProcStatus::ExitOk | ProcStatus::ExitErr(_))
+    }
 }
 
 /// Log line from captured stdout/stderr output
@@ -65,15 +93,9 @@ impl OutputBuffer {
     }
 }
 
-/// Process information
-#[derive(Clone, Serialize, Deserialize, Debug)]
-pub struct PsInfo {
-    pub pid: u32,
-    pub state: String,
-}
-
 impl ChildProc {
     fn spawn(args: &[String]) -> Result<Self, DispatcherError> {
+        let cmd_str = args.join(" ");
         let mut cmd = VecDeque::from(args.to_owned());
         let Some(exe) = cmd.pop_front() else {
             return Err(DispatcherError::EmptyProcCommandError);
@@ -94,7 +116,7 @@ impl ChildProc {
 
         let buffer = output.clone();
         let stdout = child.stdout.take().unwrap();
-        let _stdout_handle =
+        let stdout_handle =
             thread::spawn(move || output_listener(BufReader::new(stdout), pid, false, buffer));
 
         let buffer = output.clone();
@@ -102,14 +124,46 @@ impl ChildProc {
         let _stderr_handle =
             thread::spawn(move || output_listener(BufReader::new(stderr), pid, true, buffer));
 
+        let info = ProcInfo {
+            pid,
+            command: cmd_str,
+            state: ProcStatus::Spawned,
+            start: Local::now(),
+            end: None,
+        };
+
         let child_proc = ChildProc {
             proc: child,
+            stdout_handle: Some(stdout_handle),
+            info,
             output,
         };
         Ok(child_proc)
     }
+    fn update_proc_info(&mut self) -> &ProcInfo {
+        if self.info.end.is_none() {
+            self.info.state = match self.proc.try_wait() {
+                Ok(Some(status)) if status.success() => ProcStatus::ExitOk,
+                Ok(Some(status)) => ProcStatus::ExitErr(status.code().unwrap_or(0)),
+                Ok(None) => ProcStatus::Running,
+                Err(e) => ProcStatus::Unknown(e.to_string()),
+            };
+            if self
+                .stdout_handle
+                .as_ref()
+                .map(|thread| thread.is_finished())
+                .unwrap_or(false)
+            {
+                let result = self.stdout_handle.take().unwrap().join();
+                if let Ok(ts) = result {
+                    self.info.end = Some(ts);
+                }
+            }
+        }
+        &self.info
+    }
     fn is_running(&mut self) -> bool {
-        matches!(self.proc.try_wait(), Ok(None))
+        !self.update_proc_info().state.exited()
     }
 }
 
@@ -124,7 +178,7 @@ fn output_listener<R: Read>(
     pid: u32,
     error: bool,
     buffer: Arc<Mutex<OutputBuffer>>,
-) {
+) -> DateTime<Local> {
     reader.lines().map_while(Result::ok).for_each(|line| {
         let ts = Local::now();
         if error {
@@ -142,6 +196,10 @@ fn output_listener<R: Read>(
             buffer.push(entry);
         }
     });
+    if !error {
+        info!(target: &format!("{pid}"), "Process finished");
+    }
+    Local::now()
 }
 
 #[derive(Default)]
@@ -206,16 +264,8 @@ impl Spawner {
     /// Return info about running and finished commands
     pub fn ps(&mut self, stream: &mut IpcStream) -> Result<(), DispatcherError> {
         for child in &mut self.procs.lock().unwrap().iter_mut() {
-            let state = match child.proc.try_wait() {
-                Ok(Some(status)) => format!("Exited with {status}"),
-                Ok(None) => "Running".to_string(),
-                Err(e) => format!("Error {e}"),
-            };
-            let info = PsInfo {
-                pid: child.proc.id(),
-                state,
-            };
-            if stream.send_message(&Message::PsInfo(info)).is_err() {
+            let info = child.update_proc_info();
+            if stream.send_message(&Message::PsInfo(info.clone())).is_err() {
                 info!("Aborting ps command (stream error)");
                 break;
             }
