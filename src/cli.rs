@@ -30,6 +30,8 @@ pub enum ExecCommand {
         /// Service group name
         group: String,
     },
+    /// Stop all processes
+    Exit,
 }
 
 #[derive(Subcommand, Debug, Serialize, Deserialize)]

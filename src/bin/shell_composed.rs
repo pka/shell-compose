@@ -34,9 +34,8 @@ fn run_server() {
                     stream.send_message(&response).unwrap()
                 }
                 Message::QueryCommand(cmd) => dispatcher.query_command(cmd, &mut stream),
-                m => {
-                    // Unexpected command
-                    dbg!(m);
+                msg => {
+                    error!("Unexpected protocol message: `{msg:?}`");
                 }
             }
         },
@@ -62,6 +61,7 @@ impl Dispatcher {
             ExecCommand::Runat { at, args } => self.spawner.run_at(&at, &args),
             ExecCommand::Start { service } => self.spawner.start(&service),
             ExecCommand::Up { group } => self.spawner.up(&group),
+            ExecCommand::Exit => std::process::exit(0),
         };
         if let Err(e) = &res {
             error!("{e}");
