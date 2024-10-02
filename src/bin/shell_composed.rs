@@ -1,6 +1,8 @@
 use clap::{CommandFactory, FromArgMatches, Subcommand};
-use log::{error, info};
-use shell_compose::*;
+use log::error;
+use shell_compose::{
+    init_daemon_logger, start_ipc_listener, Cli, Dispatcher, ExecCommand, Message, SOCKET_NAME,
+};
 
 fn run_server() {
     let cli = Cli::command();
@@ -42,43 +44,6 @@ fn run_server() {
         Some(|e| panic!("Incoming connection error: {e}")),
     )
     .expect("Failed to start ipc listener");
-}
-
-struct Dispatcher {
-    spawner: Spawner,
-}
-
-impl Dispatcher {
-    fn new() -> Self {
-        Dispatcher {
-            spawner: Spawner::new(),
-        }
-    }
-    fn exec_command(&mut self, cmd: ExecCommand) -> Message {
-        info!("Executing `{cmd:?}`");
-        let res = match cmd {
-            ExecCommand::Run { args } => self.spawner.run(&args),
-            ExecCommand::Runat { at, args } => self.spawner.run_at(&at, &args),
-            ExecCommand::Start { service } => self.spawner.start(&service),
-            ExecCommand::Up { group } => self.spawner.up(&group),
-            ExecCommand::Exit => std::process::exit(0),
-        };
-        if let Err(e) = &res {
-            error!("{e}");
-        }
-        res.into()
-    }
-    fn query_command(&mut self, cmd: QueryCommand, stream: &mut IpcStream) {
-        info!("Executing `{cmd:?}`");
-        let res = match cmd {
-            QueryCommand::Ps => self.spawner.ps(stream),
-            QueryCommand::Logs => self.spawner.log(stream),
-        };
-        if let Err(e) = &res {
-            error!("{e}");
-        }
-        let _ = stream.send_message(&res.into());
-    }
 }
 
 fn main() {
