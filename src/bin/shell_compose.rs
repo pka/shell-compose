@@ -1,5 +1,5 @@
 use clap::{CommandFactory, FromArgMatches, Subcommand};
-use log::info;
+use log::{error, info};
 use shell_compose::*;
 use std::process::{self, Stdio};
 use std::time::Duration;
@@ -43,12 +43,11 @@ fn cli() -> Result<(), DispatcherError> {
     init_cli_logger();
 
     if IpcStream::check_connection(SOCKET_NAME).is_err() {
-        info!(target: "dispatcher", "Starting dispatcher");
+        info!(target: "dispatcher", "Starting background process");
         let dispatcher = DispatcherProc::spawn();
         dispatcher.wait(2000)?;
     }
 
-    info!(target: "dispatcher", "Sending command");
     let mut stream = IpcStream::connect("cli", SOCKET_NAME)?;
     let msg: Message = exec_command
         .map(Into::into)
@@ -57,7 +56,14 @@ fn cli() -> Result<(), DispatcherError> {
     loop {
         let response = stream.receive_message();
         match response {
-            Ok(Message::Ok) => return Ok(()),
+            Ok(Message::Ok) => {
+                info!(target: "dispatcher", "Command successful");
+                return Ok(());
+            }
+            Ok(Message::Err(msg)) => {
+                error!(target: "dispatcher", "{msg} - Check logs for more information");
+                return Ok(());
+            }
             Ok(Message::PsInfo(info)) => {
                 println!("PID: {} - {}", info.pid, info.state);
                 return Ok(());
@@ -66,7 +72,7 @@ fn cli() -> Result<(), DispatcherError> {
                 log_line.log();
             }
             Err(e) => return Err(e.into()),
-            _ => return Err(DispatcherError::CommandError),
+            _ => return Err(DispatcherError::UnexpectedMessageError),
         }
     }
 }

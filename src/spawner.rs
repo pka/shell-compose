@@ -10,11 +10,13 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 
+/// Child process running commands
 struct ChildProc {
     proc: Child,
     output: Arc<Mutex<OutputBuffer>>,
 }
 
+/// Log line from captured stdout/stderr output
 #[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct LogLine {
     pub ts: DateTime<Local>,
@@ -33,6 +35,7 @@ impl LogLine {
     }
 }
 
+/// Buffer for captured stdout/stderr output
 struct OutputBuffer {
     lines: VecDeque<LogLine>,
     max_len: Option<usize>,
@@ -62,6 +65,7 @@ impl OutputBuffer {
     }
 }
 
+/// Process information
 #[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct PsInfo {
     pub pid: u32,
@@ -72,7 +76,7 @@ impl ChildProc {
     fn spawn(args: &[String]) -> Result<Self, DispatcherError> {
         let mut cmd = VecDeque::from(args.to_owned());
         let Some(exe) = cmd.pop_front() else {
-            return Err(DispatcherError::InvalidCommandError);
+            return Err(DispatcherError::EmptyProcCommandError);
         };
         // info!("Spawning {exe} {cmd:?}");
 
@@ -149,11 +153,21 @@ impl Spawner {
     pub fn new() -> Self {
         Spawner::default()
     }
+    /// Spawn command
     pub fn run(&mut self, args: &[String]) -> Result<(), DispatcherError> {
-        let child = ChildProc::spawn(args)?;
+        let mut child = ChildProc::spawn(args)?;
+        // Wait for startup failure
+        thread::sleep(Duration::from_millis(10));
+        let result = match child.proc.try_wait() {
+            Ok(Some(status)) if status.success() => Ok(()),
+            Ok(Some(status)) => Err(DispatcherError::ProcExitError(status.code().unwrap_or(0))),
+            Ok(None) => Ok(()), // Running
+            Err(e) => Err(DispatcherError::ProcSpawnError(e)),
+        };
         self.procs.lock().unwrap().insert(0, child);
-        Ok(())
+        result
     }
+    /// Add cron job for spawning command
     pub fn run_at(&mut self, cron: &str, args: &[String]) -> Result<(), DispatcherError> {
         let mut scheduler = JobScheduler::new();
         let job: Vec<String> = args.into();
@@ -175,9 +189,11 @@ impl Spawner {
         });
         Ok(())
     }
+    /// Start service (just repipe)
     pub fn start(&mut self, service: &str) -> Result<(), DispatcherError> {
         self.run(vec!["just".to_string(), service.to_string()].as_slice())
     }
+    /// Start service group (all just repipes in group)
     pub fn up(&mut self, group: &str) -> Result<(), DispatcherError> {
         if let Ok(justfile) = Justfile::parse() {
             let recipes = justfile.group_recipes(group);
@@ -187,6 +203,7 @@ impl Spawner {
         }
         Ok(())
     }
+    /// Return info about running and finished commands
     pub fn ps(&mut self, stream: &mut IpcStream) -> Result<(), DispatcherError> {
         for child in &mut self.procs.lock().unwrap().iter_mut() {
             let state = match child.proc.try_wait() {
@@ -205,11 +222,13 @@ impl Spawner {
         }
         Ok(())
     }
+    /// Return log lines
     pub fn log(&mut self, stream: &mut IpcStream) -> Result<(), DispatcherError> {
         let mut last_seen_ts: HashMap<u32, DateTime<Local>> = HashMap::new(); // pid -> last_seen
         'cmd: loop {
             let mut running_childs = 0;
             for child in self.procs.lock().unwrap().iter_mut() {
+                // TODO: buffered log lines should be sorted by time instead by process+time
                 if let Ok(output) = child.output.lock() {
                     let last_seen = last_seen_ts
                         .entry(child.proc.id())
@@ -233,9 +252,8 @@ impl Spawner {
                 break;
             }
             // Wait for new output
-            thread::sleep(Duration::from_millis(100));
+            thread::sleep(Duration::from_millis(50));
         }
-        stream.send_message(&Message::Ok)?;
         Ok(())
     }
 }

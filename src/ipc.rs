@@ -10,12 +10,8 @@ use thiserror::Error;
 pub enum IpcServerError {
     #[error("Failed to bind to socket: {0}")]
     BindError(io::Error),
-    #[error("Failed to delete stale socket file: {0}")]
-    FileError(io::Error),
     #[error("Failed to resolve socket name: {0}")]
     SocketNameError(io::Error),
-    #[error("The socket is already in use by an instance of the current process.")]
-    AlreadyInUseError,
 }
 
 #[derive(Error, Debug)]
@@ -44,14 +40,6 @@ pub enum IpcStreamWriteError {
     WriteError(#[from] io::Error),
     #[error("Failed to serialize data for socket: {0}")]
     SerializeError(#[from] bincode::Error),
-}
-
-#[derive(Error, Debug)]
-pub enum IpcStreamError {
-    #[error("Failed to read from socket: {0}")]
-    ReadError(#[from] IpcStreamReadError),
-    #[error("Failed to write to socket: {0}")]
-    WriteError(#[from] IpcStreamWriteError),
 }
 
 /// Listen for incoming connections on the given socket.

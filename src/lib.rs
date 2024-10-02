@@ -19,12 +19,14 @@ pub enum DispatcherError {
     ProcSpawnError(std::io::Error),
     #[error("Failed to spawn process (timeout)")]
     ProcSpawnTimeoutError,
+    #[error("Process exit code: {0}")]
+    ProcExitError(i32),
+    #[error("Empty command")]
+    EmptyProcCommandError,
     #[error(transparent)]
     JustfileError(#[from] JustfileError),
-    #[error("Invalid command")]
-    InvalidCommandError,
-    #[error("Command returned error")]
-    CommandError,
+    #[error("Communication protocol error")]
+    UnexpectedMessageError,
     #[error(transparent)]
     IpcClientError(#[from] IpcClientError),
     #[error("Cron error: {0}")]

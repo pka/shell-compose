@@ -1,4 +1,4 @@
-use crate::{LogLine, PsInfo};
+use crate::{DispatcherError, LogLine, PsInfo};
 use clap::{Parser, Subcommand};
 use serde::{Deserialize, Serialize};
 
@@ -49,6 +49,7 @@ pub enum Message {
     PsInfo(PsInfo),
     LogLine(LogLine),
     Ok,
+    Err(String),
 }
 
 impl From<ExecCommand> for Message {
@@ -60,5 +61,15 @@ impl From<ExecCommand> for Message {
 impl From<QueryCommand> for Message {
     fn from(cmd: QueryCommand) -> Self {
         Message::QueryCommand(cmd)
+    }
+}
+
+impl From<Result<(), DispatcherError>> for Message {
+    fn from(res: Result<(), DispatcherError>) -> Self {
+        if let Err(e) = res {
+            Message::Err(format!("{e}"))
+        } else {
+            Message::Ok
+        }
     }
 }
