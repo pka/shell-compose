@@ -1,6 +1,12 @@
 [package]
 name = "shell-compose"
 version = "0.1.0"
+readme = "README.md"
+description = "Lightweight background process runner for long-running or scheduled tasks"
+authors = ["Pirmin Kalberer <pirmin.kalberer@gmail.com>"]
+homepage = "https://github.com/pka/shell-compose"
+repository = "https://github.com/pka/shell-compose"
+license = "MIT"
 edition = "2021"
 default-run = "shell-compose"
 
