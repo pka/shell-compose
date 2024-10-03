@@ -1,8 +1,10 @@
 [package]
 name = "shell-compose"
-version = "0.1.0"
+version = "0.1.1"
 readme = "README.md"
 description = "Lightweight background process runner for long-running or scheduled tasks"
+categories = ["command-line-utilities"]
+keywords = ["shell", "command", "parallel", "task", "runner"]
 authors = ["Pirmin Kalberer <pirmin.kalberer@gmail.com>"]
 homepage = "https://github.com/pka/shell-compose"
 repository = "https://github.com/pka/shell-compose"
@@ -54,3 +56,4 @@ targets = ["aarch64-apple-darwin", "x86_64-apple-darwin", "x86_64-unknown-linux-
 install-path = "CARGO_HOME"
 # Whether to install an updater program
 install-updater = true
+
