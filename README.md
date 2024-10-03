@@ -2,7 +2,7 @@
 
 Shell Compose is a lightweight background process runner for long-running or scheduled tasks.
 
-![Shell Compose](screencast.gif)
+![Shell Compose](https://raw.githubusercontent.com/pka/shell-compose/main/screencast.gif)
 
 ## Features
 
@@ -60,4 +60,41 @@ shell-compose start processing
 Running all recipes in a group:
 ```
 shell-compose up autostart
+```
+
+## Installation
+
+### Pre-built binaries
+
+We provide several options to access pre-built binaries for a variety of platforms. If you would like to manually download a pre-built binary, checkout [the latest release on GitHub](https://github.com/pka/shell-compose/releases/latest).
+
+### Installer scripts
+
+#### macOS and Linux:
+
+```sh
+curl --proto '=https' --tlsv1.2 -LsSf https://github.com/pka/shell-compose/releases/latest/download/shell-compose-installer.sh | sh
+```
+
+#### Windows PowerShell:
+
+```sh
+powershell -c "irm https://github.com/pka/shell-compose/releases/latest/download/shell-compose-installer.ps1 | iex"
+```
+
+### Other Options
+
+#### cargo-binstall
+
+```sh
+cargo binstall shell-compose
+```
+
+## Build From Source
+
+For users who need to install shell-compose on platforms that we do not yet provide pre-built binaries for, you will need to build from source.
+`shell-compose` is written in [Rust](https://rust-lang.org) and uses [cargo](https://doc.rust-lang.org/cargo/index.html) to build. Once you've [installed the Rust toolchain (`rustup`)](https://rustup.rs/), run:
+
+```sh
+cargo install shell-compose --locked
 ```
