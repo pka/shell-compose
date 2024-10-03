@@ -90,7 +90,7 @@ powershell -c "irm https://github.com/pka/shell-compose/releases/latest/download
 cargo binstall shell-compose
 ```
 
-## Build From Source
+#### Build From Source
 
 For users who need to install shell-compose on platforms that we do not yet provide pre-built binaries for, you will need to build from source.
 `shell-compose` is written in [Rust](https://rust-lang.org) and uses [cargo](https://doc.rust-lang.org/cargo/index.html) to build. Once you've [installed the Rust toolchain (`rustup`)](https://rustup.rs/), run:

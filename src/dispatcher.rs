@@ -49,7 +49,6 @@ impl Dispatcher {
             ExecCommand::Runat { at, args } => self.run_at(&at, &args),
             ExecCommand::Start { service } => self.start(&service),
             ExecCommand::Up { group } => self.up(&group),
-            ExecCommand::Exit => std::process::exit(0),
         };
         if let Err(e) = &res {
             error!("{e}");
@@ -59,6 +58,7 @@ impl Dispatcher {
     pub fn query_command(&mut self, cmd: QueryCommand, stream: &mut IpcStream) {
         info!("Executing `{cmd:?}`");
         let res = match cmd {
+            QueryCommand::Exit => std::process::exit(0),
             QueryCommand::Ps => self.ps(stream),
             QueryCommand::Logs => self.log(stream),
         };

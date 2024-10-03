@@ -53,7 +53,7 @@ fn cli() -> Result<(), DispatcherError> {
         .map(Into::into)
         .or_else(|_| query_command.map(Into::into))?;
     stream.send_message(&msg)?;
-    if matches!(msg, Message::ExecCommand(ExecCommand::Exit)) {
+    if matches!(msg, Message::QueryCommand(QueryCommand::Exit)) {
         return Ok(());
     }
     let mut proc_infos = Vec::new();

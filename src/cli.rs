@@ -30,8 +30,6 @@ pub enum ExecCommand {
         /// Service group name
         group: String,
     },
-    /// Stop all processes
-    Exit,
 }
 
 #[derive(Subcommand, Debug, Serialize, Deserialize)]
@@ -40,6 +38,8 @@ pub enum QueryCommand {
     Ps,
     /// Show process logs
     Logs,
+    /// Stop all processes
+    Exit,
 }
 
 /// IPC messages
