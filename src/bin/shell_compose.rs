@@ -9,8 +9,15 @@ struct DispatcherProc;
 
 impl DispatcherProc {
     fn spawn() -> DispatcherProc {
-        let mut exe = env::current_exe().unwrap().into_os_string();
-        exe.push("d");
+        let mut exe = env::current_exe().unwrap();
+        exe.set_file_name(
+            exe.file_name()
+                .unwrap()
+                .to_os_string()
+                .into_string()
+                .unwrap()
+                .replace("compose", "composed"),
+        );
         let _proc = process::Command::new(exe)
             .stdout(Stdio::null())
             .stderr(Stdio::null())
