@@ -1,5 +1,5 @@
 use crate::{ProcInfo, ProcStatus};
-use anstyle_query::{term_supports_ansi_color, term_supports_color};
+use anstyle_query::{term_supports_ansi_color, truecolor};
 use chrono::Local;
 use comfy_table::{presets::UTF8_FULL, ContentArrangement, Table};
 use env_logger::{
@@ -32,7 +32,6 @@ pub fn init_daemon_logger() {
 
     builder.init();
 }
-
 
 // See https://jvns.ca/blog/2024/10/01/terminal-colours/ for infos about color support
 
@@ -84,9 +83,9 @@ const ERR_PALETTE: [Style; 20] = [
 
 const UNSTYLED: Style = Style::new();
 
-pub fn supports_color() -> bool {
+pub fn supports_truecolor() -> bool {
     static CELL: OnceLock<bool> = OnceLock::new();
-    *CELL.get_or_init(term_supports_color)
+    *CELL.get_or_init(truecolor)
 }
 
 pub fn supports_ansi_color() -> bool {
@@ -95,7 +94,7 @@ pub fn supports_ansi_color() -> bool {
 }
 
 pub fn log_color_proc(idx: usize, err: bool) -> &'static Style {
-    if supports_color() {
+    if supports_truecolor() {
         if err {
             &ERR_PALETTE[idx % 20]
         } else {
