@@ -482,6 +482,7 @@ dependencies = [
 name = "shell-compose"
 version = "0.1.0"
 dependencies = [
+ "anstyle-query",
  "bincode",
  "byteorder",
  "chrono",

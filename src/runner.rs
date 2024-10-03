@@ -1,4 +1,4 @@
-use crate::{log_color, DispatcherError};
+use crate::{log_color_proc, DispatcherError};
 use chrono::{DateTime, Local};
 use log::info;
 use serde::{Deserialize, Serialize};
@@ -56,7 +56,7 @@ impl LogLine {
         let dt = self.ts.format("%F %T%.3f");
         let pid = self.pid;
         let line = &self.line;
-        let color = log_color(pid as usize, self.error);
+        let color = log_color_proc(pid as usize, self.error);
         println!("{color}{dt} [{pid}] {line}{color:#}");
     }
 }

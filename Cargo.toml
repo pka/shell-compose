@@ -8,9 +8,11 @@ homepage = "https://github.com/pka/shell-compose"
 repository = "https://github.com/pka/shell-compose"
 license = "MIT"
 edition = "2021"
+rust-version = "1.70" # std::sync::OnceLock
 default-run = "shell-compose"
 
 [dependencies]
+anstyle-query = "1.1.1"
 bincode = "1.3.3"
 byteorder = "1.5.0"
 chrono = { version = "0.4.38", features = ["serde"] }
