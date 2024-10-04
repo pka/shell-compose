@@ -64,6 +64,7 @@ fn cli() -> Result<(), DispatcherError> {
     if matches!(msg, Message::QueryCommand(QueryCommand::Exit)) {
         return Ok(());
     }
+    let formatter = Formatter::default();
     let mut proc_infos = Vec::new();
     loop {
         let response = stream.receive_message();
@@ -89,7 +90,7 @@ fn cli() -> Result<(), DispatcherError> {
                 proc_infos.push(info);
             }
             Ok(Message::LogLine(log_line)) => {
-                log_line.log();
+                log_line.log(&formatter);
             }
             Err(e) => return Err(e.into()),
             _ => return Err(DispatcherError::UnexpectedMessageError),

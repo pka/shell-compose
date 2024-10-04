@@ -1,4 +1,4 @@
-use crate::{log_color_proc, DispatcherError, WatcherParam};
+use crate::{DispatcherError, Formatter, WatcherParam};
 use chrono::{DateTime, Local};
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
@@ -49,11 +49,11 @@ pub struct LogLine {
 }
 
 impl LogLine {
-    pub fn log(&self) {
+    pub fn log(&self, formatter: &Formatter) {
         let dt = self.ts.format("%F %T%.3f");
         let pid = self.pid;
         let line = &self.line;
-        let color = log_color_proc(pid as usize, self.is_stderr);
+        let color = formatter.log_color_proc(pid as usize, self.is_stderr);
         println!("{color}{dt} [{pid}] {line}{color:#}");
     }
 }

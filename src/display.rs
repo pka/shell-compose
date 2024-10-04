@@ -7,10 +7,9 @@ use env_logger::{
     Env,
 };
 use std::io::Write;
-use std::sync::OnceLock;
 
 pub fn init_cli_logger() {
-    let color = log_color_app();
+    let color = Formatter::default().log_color_app();
     let mut builder = env_logger::Builder::from_env(Env::default().default_filter_or("info"));
     builder.format(move |buf, record| {
         let target = record.target();
@@ -83,41 +82,47 @@ const ERR_PALETTE: [Style; 20] = [
 
 const UNSTYLED: Style = Style::new();
 
-pub fn supports_truecolor() -> bool {
-    static CELL: OnceLock<bool> = OnceLock::new();
-    *CELL.get_or_init(truecolor)
+pub struct Formatter {
+    supports_truecolor: bool,
+    supports_ansi_color: bool,
 }
 
-pub fn supports_ansi_color() -> bool {
-    static CELL: OnceLock<bool> = OnceLock::new();
-    *CELL.get_or_init(term_supports_ansi_color)
-}
-
-pub fn log_color_proc(idx: usize, err: bool) -> &'static Style {
-    if supports_truecolor() {
-        if err {
-            &ERR_PALETTE[idx % 20]
-        } else {
-            &PALETTE[idx % 20]
+impl Default for Formatter {
+    fn default() -> Self {
+        Formatter {
+            supports_truecolor: truecolor(),
+            supports_ansi_color: term_supports_ansi_color(),
         }
-    } else {
-        &UNSTYLED
     }
 }
 
-pub fn log_color_app() -> &'static Style {
-    const COLOR: Style = Style::new().fg_color(Some(Color::Ansi(AnsiColor::Magenta)));
-    if supports_ansi_color() {
-        &COLOR
-    } else {
-        &UNSTYLED
+impl Formatter {
+    pub fn log_color_proc(&self, idx: usize, err: bool) -> &'static Style {
+        if self.supports_truecolor {
+            if err {
+                &ERR_PALETTE[idx % 20]
+            } else {
+                &PALETTE[idx % 20]
+            }
+        } else {
+            &UNSTYLED
+        }
     }
-}
 
-pub fn log_info(text: &str) {
-    let color = log_color_app();
-    let time = Local::now().format("%F %T%.3f");
-    println!("{color}{time} [dispatcher] {text}{color:#}")
+    pub fn log_color_app(&self) -> &'static Style {
+        const COLOR: Style = Style::new().fg_color(Some(Color::Ansi(AnsiColor::Magenta)));
+        if self.supports_ansi_color {
+            &COLOR
+        } else {
+            &UNSTYLED
+        }
+    }
+
+    pub fn log_info(&self, text: &str) {
+        let color = self.log_color_app();
+        let time = Local::now().format("%F %T%.3f");
+        println!("{color}{time} [dispatcher] {text}{color:#}")
+    }
 }
 
 pub fn proc_info_table(proc_infos: &[ProcInfo]) {

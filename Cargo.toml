@@ -10,7 +10,6 @@ homepage = "https://github.com/pka/shell-compose"
 repository = "https://github.com/pka/shell-compose"
 license = "MIT"
 edition = "2021"
-rust-version = "1.70" # std::sync::OnceLock
 default-run = "shell-compose"
 
 [dependencies]
