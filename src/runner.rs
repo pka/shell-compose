@@ -48,7 +48,7 @@ pub struct LogLine {
     pub ts: DateTime<Local>,
     pub pid: u32,
     pub line: String,
-    pub error: bool,
+    pub is_stderr: bool,
 }
 
 impl LogLine {
@@ -56,7 +56,7 @@ impl LogLine {
         let dt = self.ts.format("%F %T%.3f");
         let pid = self.pid;
         let line = &self.line;
-        let color = log_color_proc(pid as usize, self.error);
+        let color = log_color_proc(pid as usize, self.is_stderr);
         println!("{color}{dt} [{pid}] {line}{color:#}");
     }
 }
@@ -174,12 +174,12 @@ impl Drop for Runner {
 fn output_listener<R: Read>(
     reader: BufReader<R>,
     pid: u32,
-    error: bool,
+    is_stderr: bool,
     buffer: Arc<Mutex<OutputBuffer>>,
 ) -> DateTime<Local> {
     reader.lines().map_while(Result::ok).for_each(|line| {
         let ts = Local::now();
-        if error {
+        if is_stderr {
             eprintln!("[{pid}] {line}");
         } else {
             println!("[{pid}] {line}");
@@ -188,13 +188,13 @@ fn output_listener<R: Read>(
             let entry = LogLine {
                 ts,
                 pid,
-                error,
+                is_stderr,
                 line,
             };
             buffer.push(entry);
         }
     });
-    if !error {
+    if !is_stderr {
         info!(target: &format!("{pid}"), "Process finished");
     }
     Local::now()
