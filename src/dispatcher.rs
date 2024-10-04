@@ -6,14 +6,17 @@ use chrono::{DateTime, Local, TimeZone};
 use job_scheduler_ng::{Job, JobScheduler};
 use log::{error, info};
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::sync::{mpsc, Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 use thiserror::Error;
 
-#[derive(Default)]
+pub(crate) type WatcherParam = u32; // PID
+
 pub struct Dispatcher {
     procs: Arc<Mutex<Vec<Runner>>>,
+    /// Watcher receiver channel for Runner threads
+    channel: mpsc::Sender<WatcherParam>,
 }
 
 #[derive(Error, Debug)]
@@ -36,6 +39,19 @@ pub enum DispatcherError {
     IpcClientError(#[from] IpcClientError),
     #[error("Cron error: {0}")]
     CronError(#[from] cron::error::Error),
+}
+
+impl Default for Dispatcher {
+    fn default() -> Self {
+        let procs = Arc::new(Mutex::new(Vec::new()));
+        let procs_watcher = procs.clone();
+        let (send, recv) = mpsc::channel();
+        let _watcher = thread::spawn(move || child_watcher(procs_watcher, recv));
+        Dispatcher {
+            procs,
+            channel: send,
+        }
+    }
 }
 
 impl Dispatcher {
@@ -69,24 +85,29 @@ impl Dispatcher {
     }
     /// Spawn command
     fn run(&mut self, args: &[String]) -> Result<(), DispatcherError> {
-        let mut child = Runner::spawn(args)?;
+        let child = Runner::spawn(args, self.channel.clone())?;
+        self.procs.lock().unwrap().insert(0, child);
         // Wait for startup failure
         thread::sleep(Duration::from_millis(10));
-        let result = match child.update_proc_info().state {
-            ProcStatus::ExitErr(code) => Err(DispatcherError::ProcExitError(code)),
-            // ProcStatus::Unknown(e) => Err(DispatcherError::ProcSpawnError(e)),
-            _ => Ok(()),
-        };
-        self.procs.lock().unwrap().insert(0, child);
-        result
+        if let Ok(procs) = self.procs.lock() {
+            if let Some(child) = procs.first() {
+                return match child.info.state {
+                    ProcStatus::ExitErr(code) => Err(DispatcherError::ProcExitError(code)),
+                    // ProcStatus::Unknown(e) => Err(DispatcherError::ProcSpawnError(e)),
+                    _ => Ok(()),
+                };
+            }
+        }
+        Ok(())
     }
     /// Add cron job for spawning command
     fn run_at(&mut self, cron: &str, args: &[String]) -> Result<(), DispatcherError> {
         let mut scheduler = JobScheduler::new();
         let job: Vec<String> = args.into();
         let procs = self.procs.clone();
+        let channel = self.channel.clone();
         scheduler.add(Job::new(cron.parse()?, move || {
-            let child = Runner::spawn(&job).unwrap();
+            let child = Runner::spawn(&job, channel.clone()).unwrap();
             procs.lock().unwrap().insert(0, child);
         }));
         let _handle = thread::spawn(move || loop {
@@ -153,5 +174,24 @@ impl Dispatcher {
             thread::sleep(Duration::from_millis(100));
         }
         Ok(())
+    }
+}
+
+fn child_watcher(procs: Arc<Mutex<Vec<Runner>>>, channel: mpsc::Receiver<WatcherParam>) {
+    loop {
+        // PID of terminated process sent from output_listener
+        let pid = channel.recv().unwrap();
+        let ts = Local::now();
+        if let Ok(mut procs) = procs.lock() {
+            if let Some(child) = procs.iter_mut().find(|p| p.info.pid == pid) {
+                // https://doc.rust-lang.org/std/process/struct.Child.html#warning
+                let _ = child.proc.wait();
+                let _info = child.update_proc_info();
+                child.info.end = Some(ts);
+            } else {
+                error!("PID {pid} of terminating process not found");
+            }
+        }
+        info!(target: &format!("{pid}"), "Process terminated");
     }
 }

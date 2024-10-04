@@ -1,19 +1,16 @@
-use crate::{log_color_proc, DispatcherError};
+use crate::{log_color_proc, DispatcherError, WatcherParam};
 use chrono::{DateTime, Local};
-use log::info;
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
 use std::io::{BufRead, BufReader, Read};
 use std::process::{Child, Command, Stdio};
-use std::sync::{Arc, Mutex};
+use std::sync::{mpsc, Arc, Mutex};
 use std::thread;
-use std::thread::JoinHandle;
 
 /// Child process controller
 pub struct Runner {
     pub proc: Child,
-    info: ProcInfo,
-    stdout_handle: Option<JoinHandle<DateTime<Local>>>,
+    pub info: ProcInfo,
     pub output: Arc<Mutex<OutputBuffer>>,
 }
 
@@ -92,7 +89,10 @@ impl OutputBuffer {
 }
 
 impl Runner {
-    pub fn spawn(args: &[String]) -> Result<Self, DispatcherError> {
+    pub fn spawn(
+        args: &[String],
+        channel: mpsc::Sender<WatcherParam>,
+    ) -> Result<Self, DispatcherError> {
         let cmd_str = args.join(" ");
         let mut cmd = VecDeque::from(args.to_owned());
         let Some(exe) = cmd.pop_front() else {
@@ -114,13 +114,14 @@ impl Runner {
 
         let buffer = output.clone();
         let stdout = child.stdout.take().unwrap();
-        let stdout_handle =
-            thread::spawn(move || output_listener(BufReader::new(stdout), pid, false, buffer));
+        let _stdout_handle = thread::spawn(move || {
+            output_listener(BufReader::new(stdout), pid, false, buffer, Some(channel))
+        });
 
         let buffer = output.clone();
         let stderr = child.stderr.take().unwrap();
         let _stderr_handle =
-            thread::spawn(move || output_listener(BufReader::new(stderr), pid, true, buffer));
+            thread::spawn(move || output_listener(BufReader::new(stderr), pid, true, buffer, None));
 
         let info = ProcInfo {
             pid,
@@ -133,7 +134,6 @@ impl Runner {
         let child_proc = Runner {
             proc: child,
             info,
-            stdout_handle: Some(stdout_handle),
             output,
         };
         Ok(child_proc)
@@ -146,17 +146,6 @@ impl Runner {
                 Ok(None) => ProcStatus::Running,
                 Err(e) => ProcStatus::Unknown(e.to_string()),
             };
-            if self
-                .stdout_handle
-                .as_ref()
-                .map(|thread| thread.is_finished())
-                .unwrap_or(false)
-            {
-                let result = self.stdout_handle.take().unwrap().join();
-                if let Ok(ts) = result {
-                    self.info.end = Some(ts);
-                }
-            }
         }
         &self.info
     }
@@ -176,7 +165,8 @@ fn output_listener<R: Read>(
     pid: u32,
     is_stderr: bool,
     buffer: Arc<Mutex<OutputBuffer>>,
-) -> DateTime<Local> {
+    channel: Option<mpsc::Sender<WatcherParam>>,
+) {
     reader.lines().map_while(Result::ok).for_each(|line| {
         let ts = Local::now();
         if is_stderr {
@@ -194,8 +184,18 @@ fn output_listener<R: Read>(
             buffer.push(entry);
         }
     });
-    if !is_stderr {
-        info!(target: &format!("{pid}"), "Process finished");
+    if let Some(channel) = channel {
+        let ts = Local::now();
+        if let Ok(mut buffer) = buffer.lock() {
+            let entry = LogLine {
+                ts,
+                pid,
+                is_stderr,
+                line: "<process terminated>".to_string(),
+            };
+            buffer.push(entry);
+        }
+        // Notify watcher
+        channel.send(pid).unwrap();
     }
-    Local::now()
 }
