@@ -89,7 +89,7 @@ fn ipc_client_connect(socket_name: &str) -> Result<LocalSocketStream, IpcClientE
     LocalSocketStream::connect(name).map_err(IpcClientError::ConnectError)
 }
 
-pub trait SocketExt {
+trait SocketExt {
     fn read_serde<T: serde::de::DeserializeOwned>(&mut self) -> Result<T, IpcStreamReadError>;
     fn write_serde<T: serde::Serialize>(&mut self, data: &T) -> Result<(), IpcStreamWriteError>;
 }
@@ -146,6 +146,11 @@ impl IpcStream {
     /// Check socket connection
     pub fn check_connection(socket_name: &str) -> Result<(), IpcClientError> {
         IpcStream::connect("check_connection", socket_name)?;
+        Ok(())
+    }
+    /// Check stream
+    pub fn alive(&mut self) -> Result<(), IpcClientError> {
+        self.stream.write_serde(&Message::Connect)?;
         Ok(())
     }
     /// Send Message.

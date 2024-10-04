@@ -67,6 +67,7 @@ fn cli() -> Result<(), DispatcherError> {
     loop {
         let response = stream.receive_message();
         match response {
+            Ok(Message::Connect) => {}
             Ok(Message::Ok) => {
                 match msg {
                     Message::ExecCommand(_) => {
