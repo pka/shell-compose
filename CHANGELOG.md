@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.3 - 2024-10-04
+
+- Stop waiting for new logs when client disconnects
+
 ## 0.1.2 - 2024-10-03
 
 ### New features

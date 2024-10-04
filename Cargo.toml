@@ -1,6 +1,6 @@
 [package]
 name = "shell-compose"
-version = "0.1.2"
+version = "0.1.3"
 readme = "README.md"
 description = "Lightweight background process runner for long-running or scheduled tasks"
 categories = ["command-line-utilities"]
