@@ -33,7 +33,7 @@ pub enum ExecCommand {
 }
 
 #[derive(Subcommand, Debug, Serialize, Deserialize)]
-pub enum QueryCommand {
+pub enum CliCommand {
     /// List running commands
     Ps,
     /// Show process logs
@@ -47,7 +47,7 @@ pub enum QueryCommand {
 pub enum Message {
     Connect,
     ExecCommand(ExecCommand),
-    QueryCommand(QueryCommand),
+    CliCommand(CliCommand),
     PsInfo(ProcInfo),
     LogLine(LogLine),
     Ok,
@@ -60,12 +60,13 @@ impl From<ExecCommand> for Message {
     }
 }
 
-impl From<QueryCommand> for Message {
-    fn from(cmd: QueryCommand) -> Self {
-        Message::QueryCommand(cmd)
+impl From<CliCommand> for Message {
+    fn from(cmd: CliCommand) -> Self {
+        Message::CliCommand(cmd)
     }
 }
 
+/// Convert execution result into response message
 impl From<Result<(), DispatcherError>> for Message {
     fn from(res: Result<(), DispatcherError>) -> Self {
         if let Err(e) = res {

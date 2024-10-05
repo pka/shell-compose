@@ -1,6 +1,6 @@
 use crate::{
-    ExecCommand, IpcClientError, IpcStream, Justfile, JustfileError, Message, ProcStatus,
-    QueryCommand, Runner,
+    CliCommand, ExecCommand, IpcClientError, IpcStream, Justfile, JustfileError, Message,
+    ProcStatus, Runner,
 };
 use chrono::{DateTime, Local, TimeZone};
 use job_scheduler_ng::{Job, JobScheduler};
@@ -71,12 +71,12 @@ impl Dispatcher {
         }
         res.into()
     }
-    pub fn query_command(&mut self, cmd: QueryCommand, stream: &mut IpcStream) {
+    pub fn cli_command(&mut self, cmd: CliCommand, stream: &mut IpcStream) {
         info!("Executing `{cmd:?}`");
         let res = match cmd {
-            QueryCommand::Exit => std::process::exit(0),
-            QueryCommand::Ps => self.ps(stream),
-            QueryCommand::Logs => self.log(stream),
+            CliCommand::Exit => std::process::exit(0),
+            CliCommand::Ps => self.ps(stream),
+            CliCommand::Logs => self.log(stream),
         };
         if let Err(e) = &res {
             error!("{e}");

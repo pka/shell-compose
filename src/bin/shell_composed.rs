@@ -35,7 +35,7 @@ fn run_server() {
                     let response = dispatcher.exec_command(cmd);
                     stream.send_message(&response).unwrap()
                 }
-                Message::QueryCommand(cmd) => dispatcher.query_command(cmd, &mut stream),
+                Message::CliCommand(cmd) => dispatcher.cli_command(cmd, &mut stream),
                 msg => {
                     error!("Unexpected protocol message: `{msg:?}`");
                 }

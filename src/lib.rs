@@ -1,11 +1,11 @@
-mod cli;
+mod command;
 mod dispatcher;
 mod display;
 mod ipc;
 mod justfile;
 mod runner;
 
-pub use cli::*;
+pub use command::*;
 pub use dispatcher::*;
 pub use display::*;
 pub use ipc::*;

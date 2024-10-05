@@ -42,15 +42,15 @@ impl DispatcherProc {
 fn cli() -> Result<(), DispatcherError> {
     let cli = Cli::command();
     let cli = ExecCommand::augment_subcommands(cli);
-    let cli = QueryCommand::augment_subcommands(cli);
+    let cli = CliCommand::augment_subcommands(cli);
     let matches = cli.get_matches();
     let exec_command = ExecCommand::from_arg_matches(&matches);
-    let query_command = QueryCommand::from_arg_matches(&matches);
+    let cli_command = CliCommand::from_arg_matches(&matches);
 
     init_cli_logger();
 
     if IpcStream::check_connection(SOCKET_NAME).is_err() {
-        // TODO: return if QueryCommand::Exit
+        // TODO: return if CliCommand::Exit
         info!(target: "dispatcher", "Starting background process");
         let dispatcher = DispatcherProc::spawn();
         dispatcher.wait(2000)?;
@@ -59,9 +59,9 @@ fn cli() -> Result<(), DispatcherError> {
     let mut stream = IpcStream::connect("cli", SOCKET_NAME)?;
     let msg: Message = exec_command
         .map(Into::into)
-        .or_else(|_| query_command.map(Into::into))?;
+        .or_else(|_| cli_command.map(Into::into))?;
     stream.send_message(&msg)?;
-    if matches!(msg, Message::QueryCommand(QueryCommand::Exit)) {
+    if matches!(msg, Message::CliCommand(CliCommand::Exit)) {
         return Ok(());
     }
     let formatter = Formatter::default();
@@ -75,7 +75,7 @@ fn cli() -> Result<(), DispatcherError> {
                     Message::ExecCommand(_) => {
                         info!(target: "dispatcher", "Command successful");
                     }
-                    Message::QueryCommand(QueryCommand::Ps) => {
+                    Message::CliCommand(CliCommand::Ps) => {
                         proc_info_table(&proc_infos);
                     }
                     _ => {}
