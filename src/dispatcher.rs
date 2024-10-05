@@ -89,7 +89,7 @@ impl Dispatcher {
     /// Spawn command
     fn run(&mut self, args: &[String]) -> Result<(), DispatcherError> {
         let child = Runner::spawn(args, self.channel.clone())?;
-        self.procs.lock().unwrap().insert(0, child);
+        self.procs.lock().expect("lock").insert(0, child);
         // Wait for startup failure
         thread::sleep(Duration::from_millis(10));
         if let Ok(procs) = self.procs.lock() {
@@ -108,7 +108,7 @@ impl Dispatcher {
         if let Some(child) = self
             .procs
             .lock()
-            .unwrap()
+            .expect("lock")
             .iter_mut()
             .find(|p| p.info.pid == pid)
         {
@@ -124,7 +124,7 @@ impl Dispatcher {
         let channel = self.channel.clone();
         scheduler.add(Job::new(cron.parse()?, move || {
             let child = Runner::spawn(&job, channel.clone()).unwrap();
-            procs.lock().unwrap().insert(0, child);
+            procs.lock().expect("lock").insert(0, child);
         }));
         let _handle = thread::spawn(move || loop {
             // Should we use same scheduler and thread for all cron jobs?
@@ -155,7 +155,7 @@ impl Dispatcher {
     }
     /// Return info about running and finished commands
     fn ps(&mut self, stream: &mut IpcStream) -> Result<(), DispatcherError> {
-        for child in &mut self.procs.lock().unwrap().iter_mut() {
+        for child in &mut self.procs.lock().expect("lock").iter_mut() {
             let info = child.update_proc_info();
             if stream.send_message(&Message::PsInfo(info.clone())).is_err() {
                 info!("Aborting ps command (stream error)");
@@ -168,7 +168,7 @@ impl Dispatcher {
     fn log(&mut self, stream: &mut IpcStream) -> Result<(), DispatcherError> {
         let mut last_seen_ts: HashMap<u32, DateTime<Local>> = HashMap::new(); // pid -> last_seen
         'cmd: loop {
-            for child in self.procs.lock().unwrap().iter_mut() {
+            for child in self.procs.lock().expect("lock").iter_mut() {
                 // TODO: buffered log lines should be sorted by time instead by process+time
                 if let Ok(output) = child.output.lock() {
                     let last_seen = last_seen_ts
@@ -198,7 +198,12 @@ fn child_watcher(procs: Arc<Mutex<Vec<Runner>>>, channel: mpsc::Receiver<Watcher
         // PID of terminated process sent from output_listener
         let pid = channel.recv().unwrap();
         let ts = Local::now();
-        if let Some(child) = procs.lock().unwrap().iter_mut().find(|p| p.info.pid == pid) {
+        if let Some(child) = procs
+            .lock()
+            .expect("lock")
+            .iter_mut()
+            .find(|p| p.info.pid == pid)
+        {
             // https://doc.rust-lang.org/std/process/struct.Child.html#warning
             let _ = child.proc.wait();
             let _info = child.update_proc_info();
