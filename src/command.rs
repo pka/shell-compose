@@ -39,9 +39,9 @@ pub enum CliCommand {
     //     /// Service group name
     //     group: String,
     // },
-    /// Stop Sercie or shell command
+    /// Stop service or shell command
     Stop {
-        /// Service process id
+        /// Process id
         pid: u32,
     },
     /// List running commands

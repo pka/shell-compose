@@ -15,7 +15,7 @@ pub(crate) type WatcherParam = u32; // PID
 
 pub struct Dispatcher {
     procs: Arc<Mutex<Vec<Runner>>>,
-    /// Watcher receiver channel for Runner threads
+    /// Sender channel for Runner threads
     channel: mpsc::Sender<WatcherParam>,
 }
 
@@ -48,7 +48,8 @@ impl Default for Dispatcher {
         let procs = Arc::new(Mutex::new(Vec::new()));
         let procs_watcher = procs.clone();
         let (send, recv) = mpsc::channel();
-        let _watcher = thread::spawn(move || child_watcher(procs_watcher, recv));
+        let watcher_send = send.clone();
+        let _watcher = thread::spawn(move || child_watcher(procs_watcher, watcher_send, recv));
         Dispatcher {
             procs,
             channel: send,
@@ -193,24 +194,36 @@ impl Dispatcher {
     }
 }
 
-fn child_watcher(procs: Arc<Mutex<Vec<Runner>>>, channel: mpsc::Receiver<WatcherParam>) {
+// sender: Sender channel for Runner threads
+// recv: Watcher receiver channel
+fn child_watcher(
+    procs: Arc<Mutex<Vec<Runner>>>,
+    sender: mpsc::Sender<WatcherParam>,
+    recv: mpsc::Receiver<WatcherParam>,
+) {
     loop {
         // PID of terminated process sent from output_listener
-        let pid = channel.recv().unwrap();
+        let pid = recv.recv().unwrap();
         let ts = Local::now();
-        if let Some(child) = procs
-            .lock()
-            .expect("lock")
-            .iter_mut()
-            .find(|p| p.info.pid == pid)
-        {
-            // https://doc.rust-lang.org/std/process/struct.Child.html#warning
-            let _ = child.proc.wait();
-            let _info = child.update_proc_info();
-            child.info.end = Some(ts);
-        } else {
-            error!("PID {pid} of terminating process not found");
-        }
         info!(target: &format!("{pid}"), "Process terminated");
+        if let Ok(mut procs) = procs.lock() {
+            if let Some(child) = procs.iter_mut().find(|p| p.info.pid == pid) {
+                // https://doc.rust-lang.org/std/process/struct.Child.html#warning
+                let _ = child.proc.wait();
+                let _ = child.update_proc_info();
+                child.info.end = Some(ts);
+                let respawn = matches!(child.info.state, ProcStatus::ExitErr(code) if code > 0);
+                if respawn {
+                    thread::sleep(Duration::from_millis(50));
+                    let result = Runner::spawn(&child.info.cmd_args, sender.clone());
+                    match result {
+                        Ok(child) => procs.insert(0, child),
+                        Err(e) => error!("Error trying to respawn failed process: {e}"),
+                    }
+                }
+            } else {
+                error!("PID {pid} of terminating process not found");
+            }
+        }
     }
 }

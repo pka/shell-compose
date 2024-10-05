@@ -18,7 +18,7 @@ pub struct Runner {
 #[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct ProcInfo {
     pub pid: u32,
-    pub command: String,
+    pub cmd_args: Vec<String>,
     pub state: ProcStatus,
     pub start: DateTime<Local>,
     pub end: Option<DateTime<Local>>,
@@ -93,7 +93,7 @@ impl Runner {
         args: &[String],
         channel: mpsc::Sender<WatcherParam>,
     ) -> Result<Self, DispatcherError> {
-        let cmd_str = args.join(" ");
+        let cmd_args = args.to_vec();
         let mut cmd = VecDeque::from(args.to_owned());
         let Some(exe) = cmd.pop_front() else {
             return Err(DispatcherError::EmptyProcCommandError);
@@ -125,7 +125,7 @@ impl Runner {
 
         let info = ProcInfo {
             pid,
-            command: cmd_str,
+            cmd_args,
             state: ProcStatus::Spawned,
             start: Local::now(),
             end: None,

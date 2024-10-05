@@ -148,6 +148,7 @@ pub fn proc_info_table(proc_infos: &[ProcInfo]) {
                 ProcStatus::Unknown(err) => clip_str(err, 20),
                 st => format!("{st:?}"),
             };
+            let command = info.cmd_args.join(" ");
             let end = if let Some(ts) = info.end {
                 format!("{}", ts.format("%F %T"))
             } else {
@@ -156,7 +157,7 @@ pub fn proc_info_table(proc_infos: &[ProcInfo]) {
             vec![
                 format!("{}", info.pid),
                 status,
-                clip_str(&info.command, 30),
+                clip_str(&command, 30),
                 format!("{}", info.start.format("%F %T")),
                 end,
             ]
