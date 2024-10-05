@@ -27,6 +27,8 @@ pub enum DispatcherError {
     ProcSpawnError(std::io::Error),
     #[error("Failed to spawn process (timeout)")]
     ProcSpawnTimeoutError,
+    #[error("Failed to terminate child process: {0}")]
+    KillError(std::io::Error),
     #[error("Process exit code: {0}")]
     ProcExitError(i32),
     #[error("Empty command")]
@@ -74,9 +76,10 @@ impl Dispatcher {
     pub fn cli_command(&mut self, cmd: CliCommand, stream: &mut IpcStream) {
         info!("Executing `{cmd:?}`");
         let res = match cmd {
-            CliCommand::Exit => std::process::exit(0),
+            CliCommand::Stop { pid } => self.stop(pid),
             CliCommand::Ps => self.ps(stream),
             CliCommand::Logs => self.log(stream),
+            CliCommand::Exit => std::process::exit(0),
         };
         if let Err(e) = &res {
             error!("{e}");
@@ -97,6 +100,19 @@ impl Dispatcher {
                     _ => Ok(()),
                 };
             }
+        }
+        Ok(())
+    }
+    /// Stop process
+    fn stop(&mut self, pid: u32) -> Result<(), DispatcherError> {
+        if let Some(child) = self
+            .procs
+            .lock()
+            .unwrap()
+            .iter_mut()
+            .find(|p| p.info.pid == pid)
+        {
+            child.proc.kill().map_err(DispatcherError::KillError)?;
         }
         Ok(())
     }
@@ -182,15 +198,13 @@ fn child_watcher(procs: Arc<Mutex<Vec<Runner>>>, channel: mpsc::Receiver<Watcher
         // PID of terminated process sent from output_listener
         let pid = channel.recv().unwrap();
         let ts = Local::now();
-        if let Ok(mut procs) = procs.lock() {
-            if let Some(child) = procs.iter_mut().find(|p| p.info.pid == pid) {
-                // https://doc.rust-lang.org/std/process/struct.Child.html#warning
-                let _ = child.proc.wait();
-                let _info = child.update_proc_info();
-                child.info.end = Some(ts);
-            } else {
-                error!("PID {pid} of terminating process not found");
-            }
+        if let Some(child) = procs.lock().unwrap().iter_mut().find(|p| p.info.pid == pid) {
+            // https://doc.rust-lang.org/std/process/struct.Child.html#warning
+            let _ = child.proc.wait();
+            let _info = child.update_proc_info();
+            child.info.end = Some(ts);
+        } else {
+            error!("PID {pid} of terminating process not found");
         }
         info!(target: &format!("{pid}"), "Process terminated");
     }

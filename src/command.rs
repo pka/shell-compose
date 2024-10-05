@@ -34,6 +34,16 @@ pub enum ExecCommand {
 
 #[derive(Subcommand, Debug, Serialize, Deserialize)]
 pub enum CliCommand {
+    // Stop service group
+    // Down {
+    //     /// Service group name
+    //     group: String,
+    // },
+    /// Stop Sercie or shell command
+    Stop {
+        /// Service process id
+        pid: u32,
+    },
     /// List running commands
     Ps,
     /// Show process logs
