@@ -1,4 +1,4 @@
-use crate::{ProcInfo, ProcStatus};
+use crate::{JobInfo, JobInfoMsg, ProcInfo, ProcStatus};
 use anstyle_query::{term_supports_ansi_color, truecolor};
 use chrono::Local;
 use comfy_table::{presets::UTF8_FULL, ContentArrangement, Table};
@@ -125,21 +125,21 @@ impl Formatter {
     }
 }
 
+fn clip_str(text: &str, max_len: usize) -> String {
+    if text.len() > max_len {
+        format!("{}...", &text[..max_len.max(3) - 3])
+    } else {
+        text.to_string()
+    }
+}
+
 pub fn proc_info_table(proc_infos: &[ProcInfo]) {
     const EMPTY: String = String::new();
-
-    fn clip_str(text: &str, max_len: usize) -> String {
-        if text.len() > max_len {
-            format!("{}...", &text[..max_len.max(3) - 3])
-        } else {
-            text.to_string()
-        }
-    }
 
     let mut table = Table::new();
     table
         .load_preset(UTF8_FULL)
-        .set_header(vec!["PID", "Status", "Command", "Start", "End"])
+        .set_header(vec!["PID", "Job", "Status", "Command", "Start", "End"])
         .set_content_arrangement(ContentArrangement::DynamicFullWidth)
         .add_rows(proc_infos.iter().map(|info| {
             let status = match &info.state {
@@ -156,10 +156,41 @@ pub fn proc_info_table(proc_infos: &[ProcInfo]) {
             };
             vec![
                 format!("{}", info.pid),
+                format!("{}", info.job_id),
                 status,
                 clip_str(&command, 30),
                 format!("{}", info.start.format("%F %T")),
                 end,
+            ]
+        }));
+
+    println!("{table}");
+}
+
+pub fn job_info_table(job_infos: &[JobInfoMsg]) {
+    const EMPTY: String = String::new();
+
+    let mut table = Table::new();
+    table
+        .load_preset(UTF8_FULL)
+        .set_header(vec!["Job", "Command", "At"])
+        .set_content_arrangement(ContentArrangement::DynamicFullWidth)
+        .add_rows(job_infos.iter().map(|jobinfo| {
+            let command = match &jobinfo.info {
+                JobInfo::Shell(args) => args.join(" "),
+                JobInfo::Service(s) => s.to_string(),
+                JobInfo::Group(s) => s.to_string(),
+                JobInfo::Cron(_, args) => args.join(" "),
+            };
+            let at = if let JobInfo::Cron(at, _) = &jobinfo.info {
+                at
+            } else {
+                &EMPTY
+            };
+            vec![
+                format!("{}", jobinfo.id),
+                clip_str(&command, 30),
+                at.to_string(),
             ]
         }));
 

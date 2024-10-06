@@ -1,10 +1,11 @@
 use crate::{
-    CliCommand, ExecCommand, IpcClientError, IpcStream, Justfile, JustfileError, Message,
-    ProcStatus, Runner,
+    CliCommand, ExecCommand, IpcClientError, IpcStream, JobInfoMsg, Justfile, JustfileError,
+    Message, ProcStatus, Runner,
 };
 use chrono::{DateTime, Local, TimeZone};
-use job_scheduler_ng::{Job, JobScheduler};
+use job_scheduler_ng::{self as job_scheduler, JobScheduler};
 use log::{error, info};
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::{mpsc, Arc, Mutex};
 use std::thread;
@@ -15,8 +16,17 @@ pub(crate) type WatcherParam = u32; // PID
 
 pub struct Dispatcher {
     procs: Arc<Mutex<Vec<Runner>>>,
+    pub jobs: HashMap<u32, JobInfo>,
     /// Sender channel for Runner threads
     channel: mpsc::Sender<WatcherParam>,
+}
+
+#[derive(Clone, Serialize, Deserialize, Debug)]
+pub enum JobInfo {
+    Shell(Vec<String>),
+    Service(String),
+    Group(String),
+    Cron(String, Vec<String>),
 }
 
 #[derive(Error, Debug)]
@@ -43,23 +53,19 @@ pub enum DispatcherError {
     CronError(#[from] cron::error::Error),
 }
 
-impl Default for Dispatcher {
-    fn default() -> Self {
+impl Dispatcher {
+    pub fn create() -> Self {
         let procs = Arc::new(Mutex::new(Vec::new()));
         let procs_watcher = procs.clone();
+        let jobs = HashMap::new();
         let (send, recv) = mpsc::channel();
         let watcher_send = send.clone();
         let _watcher = thread::spawn(move || child_watcher(procs_watcher, watcher_send, recv));
         Dispatcher {
             procs,
+            jobs,
             channel: send,
         }
-    }
-}
-
-impl Dispatcher {
-    pub fn new() -> Self {
-        Dispatcher::default()
     }
     pub fn exec_command(&mut self, cmd: ExecCommand) -> Message {
         info!("Executing `{cmd:?}`");
@@ -79,6 +85,7 @@ impl Dispatcher {
         let res = match cmd {
             CliCommand::Stop { pid } => self.stop(pid),
             CliCommand::Ps => self.ps(stream),
+            CliCommand::Jobs => self.jobs(stream),
             CliCommand::Logs => self.log(stream),
             CliCommand::Exit => std::process::exit(0),
         };
@@ -87,9 +94,17 @@ impl Dispatcher {
         }
         let _ = stream.send_message(&res.into());
     }
-    /// Spawn command
+    fn add_job(&mut self, job: JobInfo) -> u32 {
+        let job_id = self.jobs.keys().max().unwrap_or(&0) + 1;
+        self.jobs.insert(job_id, job);
+        job_id
+    }
     fn run(&mut self, args: &[String]) -> Result<(), DispatcherError> {
-        let child = Runner::spawn(args, self.channel.clone())?;
+        let job_id = self.add_job(JobInfo::Shell(args.to_vec()));
+        self.spawn_job(job_id, args)
+    }
+    fn spawn_job(&mut self, job_id: u32, args: &[String]) -> Result<(), DispatcherError> {
+        let child = Runner::spawn(job_id, args, self.channel.clone())?;
         self.procs.lock().expect("lock").insert(0, child);
         // Wait for startup failure
         thread::sleep(Duration::from_millis(10));
@@ -117,14 +132,15 @@ impl Dispatcher {
         }
         Ok(())
     }
-    /// Add cron job for spawning command
+    /// Add cron job
     fn run_at(&mut self, cron: &str, args: &[String]) -> Result<(), DispatcherError> {
+        let job_id = self.add_job(JobInfo::Cron(cron.to_string(), args.to_vec()));
         let mut scheduler = JobScheduler::new();
-        let job: Vec<String> = args.into();
+        let job_args = args.to_vec();
         let procs = self.procs.clone();
         let channel = self.channel.clone();
-        scheduler.add(Job::new(cron.parse()?, move || {
-            let child = Runner::spawn(&job, channel.clone()).unwrap();
+        let _uuid = scheduler.add(job_scheduler::Job::new(cron.parse()?, move || {
+            let child = Runner::spawn(job_id, &job_args, channel.clone()).unwrap();
             procs.lock().expect("lock").insert(0, child);
         }));
         let _handle = thread::spawn(move || loop {
@@ -142,24 +158,46 @@ impl Dispatcher {
     }
     /// Start service (just repipe)
     fn start(&mut self, service: &str) -> Result<(), DispatcherError> {
-        self.run(vec!["just".to_string(), service.to_string()].as_slice())
+        let job_id = self.add_job(JobInfo::Service(service.to_string()));
+        self.start_service(job_id, service)
+    }
+    fn start_service(&mut self, job_id: u32, service: &str) -> Result<(), DispatcherError> {
+        self.spawn_job(
+            job_id,
+            vec!["just".to_string(), service.to_string()].as_slice(),
+        )
     }
     /// Start service group (all just repipes in group)
     fn up(&mut self, group: &str) -> Result<(), DispatcherError> {
+        let job_id = self.add_job(JobInfo::Group(group.to_string()));
         if let Ok(justfile) = Justfile::parse() {
             let recipes = justfile.group_recipes(group);
             for recipe in recipes {
-                self.start(&recipe)?;
+                self.start_service(job_id, &recipe)?;
             }
         }
         Ok(())
     }
-    /// Return info about running and finished commands
+    /// Return info about running and finished processes
     fn ps(&mut self, stream: &mut IpcStream) -> Result<(), DispatcherError> {
         for child in &mut self.procs.lock().expect("lock").iter_mut() {
             let info = child.update_proc_info();
             if stream.send_message(&Message::PsInfo(info.clone())).is_err() {
                 info!("Aborting ps command (stream error)");
+                break;
+            }
+        }
+        Ok(())
+    }
+    /// Return info about jobs
+    fn jobs(&mut self, stream: &mut IpcStream) -> Result<(), DispatcherError> {
+        for (id, info) in &mut self.jobs.iter() {
+            let msg = JobInfoMsg {
+                id: *id,
+                info: info.clone(),
+            };
+            if stream.send_message(&Message::JobInfo(msg)).is_err() {
+                info!("Aborting job command (stream error)");
                 break;
             }
         }
@@ -215,7 +253,8 @@ fn child_watcher(
                 let respawn = matches!(child.info.state, ProcStatus::ExitErr(code) if code > 0);
                 if respawn {
                     thread::sleep(Duration::from_millis(50));
-                    let result = Runner::spawn(&child.info.cmd_args, sender.clone());
+                    let result =
+                        Runner::spawn(child.info.job_id, &child.info.cmd_args, sender.clone());
                     match result {
                         Ok(child) => procs.insert(0, child),
                         Err(e) => error!("Error trying to respawn failed process: {e}"),

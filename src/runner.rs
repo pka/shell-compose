@@ -17,6 +17,7 @@ pub struct Runner {
 /// Process information
 #[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct ProcInfo {
+    pub job_id: u32,
     pub pid: u32,
     pub cmd_args: Vec<String>,
     pub state: ProcStatus,
@@ -90,6 +91,7 @@ impl OutputBuffer {
 
 impl Runner {
     pub fn spawn(
+        job_id: u32,
         args: &[String],
         channel: mpsc::Sender<WatcherParam>,
     ) -> Result<Self, DispatcherError> {
@@ -124,6 +126,7 @@ impl Runner {
             thread::spawn(move || output_listener(BufReader::new(stderr), pid, true, buffer, None));
 
         let info = ProcInfo {
+            job_id,
             pid,
             cmd_args,
             state: ProcStatus::Spawned,

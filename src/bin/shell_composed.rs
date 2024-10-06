@@ -12,7 +12,7 @@ fn run_server() {
 
     init_daemon_logger();
 
-    let mut dispatcher = Dispatcher::new();
+    let mut dispatcher = Dispatcher::create();
 
     // Execute commands from CLI
     if let Ok(cmd) = exec_command {

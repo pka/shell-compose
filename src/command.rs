@@ -1,4 +1,4 @@
-use crate::{DispatcherError, LogLine, ProcInfo};
+use crate::{DispatcherError, JobInfo, LogLine, ProcInfo};
 use clap::{Parser, Subcommand};
 use serde::{Deserialize, Serialize};
 
@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 #[command(version, about, long_about = None)]
 pub struct Cli;
 
+/// Shared commands with background service
 #[derive(Subcommand, Debug, Serialize, Deserialize)]
 pub enum ExecCommand {
     /// Execute shell command
@@ -32,6 +33,7 @@ pub enum ExecCommand {
     },
 }
 
+/// Additional commands
 #[derive(Subcommand, Debug, Serialize, Deserialize)]
 pub enum CliCommand {
     // Stop service group
@@ -44,8 +46,10 @@ pub enum CliCommand {
         /// Process id
         pid: u32,
     },
-    /// List running commands
+    /// List processes
     Ps,
+    /// List active jobs
+    Jobs,
     /// Show process logs
     Logs,
     /// Stop all processes
@@ -59,9 +63,16 @@ pub enum Message {
     ExecCommand(ExecCommand),
     CliCommand(CliCommand),
     PsInfo(ProcInfo),
+    JobInfo(JobInfoMsg),
     LogLine(LogLine),
     Ok,
     Err(String),
+}
+
+#[derive(Clone, Serialize, Deserialize, Debug)]
+pub struct JobInfoMsg {
+    pub id: u32,
+    pub info: JobInfo,
 }
 
 impl From<ExecCommand> for Message {
