@@ -1,4 +1,4 @@
-use crate::{JobInfo, JobInfoMsg, ProcInfo, ProcStatus};
+use crate::{Job, JobInfo, ProcInfo, ProcStatus};
 use anstyle_query::{term_supports_ansi_color, truecolor};
 use chrono::Local;
 use comfy_table::{presets::UTF8_FULL, ContentArrangement, Table};
@@ -139,7 +139,7 @@ pub fn proc_info_table(proc_infos: &[ProcInfo]) {
     let mut table = Table::new();
     table
         .load_preset(UTF8_FULL)
-        .set_header(vec!["PID", "Job", "Status", "Command", "Start", "End"])
+        .set_header(vec!["Job", "PID", "Status", "Command", "Start", "End"])
         .set_content_arrangement(ContentArrangement::DynamicFullWidth)
         .add_rows(proc_infos.iter().map(|info| {
             let status = match &info.state {
@@ -155,8 +155,8 @@ pub fn proc_info_table(proc_infos: &[ProcInfo]) {
                 EMPTY
             };
             vec![
-                format!("{}", info.pid),
                 format!("{}", info.job_id),
+                format!("{}", info.pid),
                 status,
                 clip_str(&command, 30),
                 format!("{}", info.start.format("%F %T")),
@@ -167,7 +167,7 @@ pub fn proc_info_table(proc_infos: &[ProcInfo]) {
     println!("{table}");
 }
 
-pub fn job_info_table(job_infos: &[JobInfoMsg]) {
+pub fn job_info_table(job_infos: &[Job]) {
     const EMPTY: String = String::new();
 
     let mut table = Table::new();

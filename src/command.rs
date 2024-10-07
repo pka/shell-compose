@@ -1,4 +1,4 @@
-use crate::{DispatcherError, JobInfo, LogLine, ProcInfo};
+use crate::{DispatcherError, Job, JobId, LogLine, ProcInfo};
 use clap::{Parser, Subcommand};
 use serde::{Deserialize, Serialize};
 
@@ -63,16 +63,11 @@ pub enum Message {
     ExecCommand(ExecCommand),
     CliCommand(CliCommand),
     PsInfo(ProcInfo),
-    JobInfo(JobInfoMsg),
+    JobInfo(Job),
     LogLine(LogLine),
     Ok,
+    JobStarted(JobId),
     Err(String),
-}
-
-#[derive(Clone, Serialize, Deserialize, Debug)]
-pub struct JobInfoMsg {
-    pub id: u32,
-    pub info: JobInfo,
 }
 
 impl From<ExecCommand> for Message {

@@ -1,4 +1,4 @@
-use crate::{DispatcherError, Formatter, WatcherParam};
+use crate::{DispatcherError, Formatter, JobId, Pid};
 use chrono::{DateTime, Local};
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
@@ -17,8 +17,8 @@ pub struct Runner {
 /// Process information
 #[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct ProcInfo {
-    pub job_id: u32,
-    pub pid: u32,
+    pub job_id: JobId,
+    pub pid: Pid,
     pub cmd_args: Vec<String>,
     pub state: ProcStatus,
     pub start: DateTime<Local>,
@@ -44,7 +44,8 @@ impl ProcStatus {
 #[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct LogLine {
     pub ts: DateTime<Local>,
-    pub pid: u32,
+    pub job_id: JobId,
+    pub pid: Pid,
     pub line: String,
     pub is_stderr: bool,
 }
@@ -52,10 +53,11 @@ pub struct LogLine {
 impl LogLine {
     pub fn log(&self, formatter: &Formatter) {
         let dt = self.ts.format("%F %T%.3f");
+        let job_id = self.job_id;
         let pid = self.pid;
         let line = &self.line;
-        let color = formatter.log_color_proc(pid as usize, self.is_stderr);
-        println!("{color}{dt} [{pid}] {line}{color:#}");
+        let color = formatter.log_color_proc(job_id as usize, self.is_stderr);
+        println!("{color}{dt} [{job_id}/{pid}] {line}{color:#}");
     }
 }
 
@@ -91,9 +93,9 @@ impl OutputBuffer {
 
 impl Runner {
     pub fn spawn(
-        job_id: u32,
+        job_id: JobId,
         args: &[String],
-        channel: mpsc::Sender<WatcherParam>,
+        channel: mpsc::Sender<Pid>,
     ) -> Result<Self, DispatcherError> {
         let cmd_args = args.to_vec();
         let mut cmd = VecDeque::from(args.to_owned());
@@ -117,13 +119,21 @@ impl Runner {
         let buffer = output.clone();
         let stdout = child.stdout.take().unwrap();
         let _stdout_handle = thread::spawn(move || {
-            output_listener(BufReader::new(stdout), pid, false, buffer, Some(channel))
+            output_listener(
+                BufReader::new(stdout),
+                job_id,
+                pid,
+                false,
+                buffer,
+                Some(channel),
+            )
         });
 
         let buffer = output.clone();
         let stderr = child.stderr.take().unwrap();
-        let _stderr_handle =
-            thread::spawn(move || output_listener(BufReader::new(stderr), pid, true, buffer, None));
+        let _stderr_handle = thread::spawn(move || {
+            output_listener(BufReader::new(stderr), job_id, pid, true, buffer, None)
+        });
 
         let info = ProcInfo {
             job_id,
@@ -165,21 +175,23 @@ impl Drop for Runner {
 
 fn output_listener<R: Read>(
     reader: BufReader<R>,
-    pid: u32,
+    job_id: JobId,
+    pid: Pid,
     is_stderr: bool,
     buffer: Arc<Mutex<OutputBuffer>>,
-    channel: Option<mpsc::Sender<WatcherParam>>,
+    channel: Option<mpsc::Sender<Pid>>,
 ) {
     reader.lines().map_while(Result::ok).for_each(|line| {
         let ts = Local::now();
         if is_stderr {
-            eprintln!("[{pid}] {line}");
+            eprintln!("[{job_id}/{pid}] {line}");
         } else {
-            println!("[{pid}] {line}");
+            println!("[[{job_id}/{pid}] {line}");
         }
         if let Ok(mut buffer) = buffer.lock() {
             let entry = LogLine {
                 ts,
+                job_id,
                 pid,
                 is_stderr,
                 line,
@@ -192,6 +204,7 @@ fn output_listener<R: Read>(
         if let Ok(mut buffer) = buffer.lock() {
             let entry = LogLine {
                 ts,
+                job_id,
                 pid,
                 is_stderr,
                 line: "<process terminated>".to_string(),

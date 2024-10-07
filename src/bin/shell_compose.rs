@@ -86,6 +86,10 @@ fn cli() -> Result<(), DispatcherError> {
                 }
                 return Ok(());
             }
+            Ok(Message::JobStarted(job_id)) => {
+                info!(target: "dispatcher", "Job {job_id} started");
+                return Ok(());
+            }
             Ok(Message::Err(msg)) => {
                 error!(target: "dispatcher", "{msg} - Check logs for more information");
                 return Ok(());

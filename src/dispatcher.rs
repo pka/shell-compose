@@ -1,6 +1,6 @@
 use crate::{
-    CliCommand, ExecCommand, IpcClientError, IpcStream, JobInfoMsg, Justfile, JustfileError,
-    Message, ProcStatus, Runner,
+    CliCommand, ExecCommand, IpcClientError, IpcStream, Justfile, JustfileError, Message,
+    ProcStatus, Runner,
 };
 use chrono::{DateTime, Local, TimeZone};
 use job_scheduler_ng::{self as job_scheduler, JobScheduler};
@@ -12,13 +12,14 @@ use std::thread;
 use std::time::Duration;
 use thiserror::Error;
 
-pub(crate) type WatcherParam = u32; // PID
+pub type JobId = u32;
+pub type Pid = u32;
 
 pub struct Dispatcher {
     procs: Arc<Mutex<Vec<Runner>>>,
-    pub jobs: HashMap<u32, JobInfo>,
+    pub jobs: HashMap<JobId, JobInfo>,
     /// Sender channel for Runner threads
-    channel: mpsc::Sender<WatcherParam>,
+    channel: mpsc::Sender<Pid>,
 }
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
@@ -27,6 +28,12 @@ pub enum JobInfo {
     Service(String),
     Group(String),
     Cron(String, Vec<String>),
+}
+
+#[derive(Clone, Serialize, Deserialize, Debug)]
+pub struct Job {
+    pub id: JobId,
+    pub info: JobInfo,
 }
 
 #[derive(Error, Debug)]
@@ -75,10 +82,13 @@ impl Dispatcher {
             ExecCommand::Start { service } => self.start(&service),
             ExecCommand::Up { group } => self.up(&group),
         };
-        if let Err(e) = &res {
-            error!("{e}");
+        match res {
+            Err(e) => {
+                error!("{e}");
+                Message::Err(format!("{e}"))
+            }
+            Ok(job_id) => Message::JobStarted(job_id),
         }
-        res.into()
     }
     pub fn cli_command(&mut self, cmd: CliCommand, stream: &mut IpcStream) {
         info!("Executing `{cmd:?}`");
@@ -94,16 +104,17 @@ impl Dispatcher {
         }
         let _ = stream.send_message(&res.into());
     }
-    fn add_job(&mut self, job: JobInfo) -> u32 {
+    fn add_job(&mut self, job: JobInfo) -> JobId {
         let job_id = self.jobs.keys().max().unwrap_or(&0) + 1;
         self.jobs.insert(job_id, job);
         job_id
     }
-    fn run(&mut self, args: &[String]) -> Result<(), DispatcherError> {
+    fn run(&mut self, args: &[String]) -> Result<JobId, DispatcherError> {
         let job_id = self.add_job(JobInfo::Shell(args.to_vec()));
-        self.spawn_job(job_id, args)
+        self.spawn_job(job_id, args)?;
+        Ok(job_id)
     }
-    fn spawn_job(&mut self, job_id: u32, args: &[String]) -> Result<(), DispatcherError> {
+    fn spawn_job(&mut self, job_id: JobId, args: &[String]) -> Result<(), DispatcherError> {
         let child = Runner::spawn(job_id, args, self.channel.clone())?;
         self.procs.lock().expect("lock").insert(0, child);
         // Wait for startup failure
@@ -120,7 +131,7 @@ impl Dispatcher {
         Ok(())
     }
     /// Stop process
-    fn stop(&mut self, pid: u32) -> Result<(), DispatcherError> {
+    fn stop(&mut self, pid: Pid) -> Result<(), DispatcherError> {
         if let Some(child) = self
             .procs
             .lock()
@@ -133,7 +144,7 @@ impl Dispatcher {
         Ok(())
     }
     /// Add cron job
-    fn run_at(&mut self, cron: &str, args: &[String]) -> Result<(), DispatcherError> {
+    fn run_at(&mut self, cron: &str, args: &[String]) -> Result<JobId, DispatcherError> {
         let job_id = self.add_job(JobInfo::Cron(cron.to_string(), args.to_vec()));
         let mut scheduler = JobScheduler::new();
         let job_args = args.to_vec();
@@ -154,21 +165,22 @@ impl Dispatcher {
             }
             std::thread::sleep(wait_time);
         });
-        Ok(())
+        Ok(job_id)
     }
     /// Start service (just repipe)
-    fn start(&mut self, service: &str) -> Result<(), DispatcherError> {
+    fn start(&mut self, service: &str) -> Result<JobId, DispatcherError> {
         let job_id = self.add_job(JobInfo::Service(service.to_string()));
-        self.start_service(job_id, service)
+        self.start_service(job_id, service)?;
+        Ok(job_id)
     }
-    fn start_service(&mut self, job_id: u32, service: &str) -> Result<(), DispatcherError> {
+    fn start_service(&mut self, job_id: JobId, service: &str) -> Result<(), DispatcherError> {
         self.spawn_job(
             job_id,
             vec!["just".to_string(), service.to_string()].as_slice(),
         )
     }
     /// Start service group (all just repipes in group)
-    fn up(&mut self, group: &str) -> Result<(), DispatcherError> {
+    fn up(&mut self, group: &str) -> Result<JobId, DispatcherError> {
         let job_id = self.add_job(JobInfo::Group(group.to_string()));
         if let Ok(justfile) = Justfile::parse() {
             let recipes = justfile.group_recipes(group);
@@ -176,7 +188,7 @@ impl Dispatcher {
                 self.start_service(job_id, &recipe)?;
             }
         }
-        Ok(())
+        Ok(job_id)
     }
     /// Return info about running and finished processes
     fn ps(&mut self, stream: &mut IpcStream) -> Result<(), DispatcherError> {
@@ -192,11 +204,11 @@ impl Dispatcher {
     /// Return info about jobs
     fn jobs(&mut self, stream: &mut IpcStream) -> Result<(), DispatcherError> {
         for (id, info) in &mut self.jobs.iter() {
-            let msg = JobInfoMsg {
+            let job = Job {
                 id: *id,
                 info: info.clone(),
             };
-            if stream.send_message(&Message::JobInfo(msg)).is_err() {
+            if stream.send_message(&Message::JobInfo(job)).is_err() {
                 info!("Aborting job command (stream error)");
                 break;
             }
@@ -205,7 +217,7 @@ impl Dispatcher {
     }
     /// Return log lines
     fn log(&mut self, stream: &mut IpcStream) -> Result<(), DispatcherError> {
-        let mut last_seen_ts: HashMap<u32, DateTime<Local>> = HashMap::new(); // pid -> last_seen
+        let mut last_seen_ts: HashMap<Pid, DateTime<Local>> = HashMap::new();
         'cmd: loop {
             for child in self.procs.lock().expect("lock").iter_mut() {
                 // TODO: buffered log lines should be sorted by time instead by process+time
@@ -236,8 +248,8 @@ impl Dispatcher {
 // recv: Watcher receiver channel
 fn child_watcher(
     procs: Arc<Mutex<Vec<Runner>>>,
-    sender: mpsc::Sender<WatcherParam>,
-    recv: mpsc::Receiver<WatcherParam>,
+    sender: mpsc::Sender<Pid>,
+    recv: mpsc::Receiver<Pid>,
 ) {
     loop {
         // PID of terminated process sent from output_listener
