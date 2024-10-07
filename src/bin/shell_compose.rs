@@ -18,12 +18,13 @@ impl DispatcherProc {
                 .unwrap()
                 .replace("compose", "composed"),
         );
-        let _proc = process::Command::new(exe)
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            // .env("RUST_LOG", "debug")
-            .spawn()
-            .unwrap();
+        let mut proc = process::Command::new(exe);
+        let proc = if env::var("RUST_LOG").unwrap_or("".to_string()) == "debug" {
+            proc.env("RUST_LOG", "debug")
+        } else {
+            proc.stdout(Stdio::null()).stderr(Stdio::null())
+        };
+        proc.spawn().unwrap();
         DispatcherProc
     }
     fn wait(&self, max_ms: u64) -> Result<(), DispatcherError> {
@@ -86,8 +87,16 @@ fn cli() -> Result<(), DispatcherError> {
                 }
                 return Ok(());
             }
-            Ok(Message::JobStarted(job_id)) => {
-                info!(target: "dispatcher", "Job {job_id} started");
+            Ok(Message::JobsStarted(job_ids)) => {
+                match job_ids.len() {
+                    0 => error!(target: "dispatcher", "No jobs started (services running)"),
+                    1 => {
+                        info!(target: "dispatcher", "Job {} started", job_ids.first().unwrap_or(&0))
+                    }
+                    _ => {
+                        info!(target: "dispatcher", "Jobs {} started", job_ids.iter().map(|id| id.to_string()).collect::<Vec<_>>().join(", "))
+                    }
+                }
                 return Ok(());
             }
             Ok(Message::Err(msg)) => {

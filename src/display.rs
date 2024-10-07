@@ -179,7 +179,6 @@ pub fn job_info_table(job_infos: &[Job]) {
             let command = match &jobinfo.info {
                 JobInfo::Shell(args) => args.join(" "),
                 JobInfo::Service(s) => s.to_string(),
-                JobInfo::Group(s) => s.to_string(),
                 JobInfo::Cron(_, args) => args.join(" "),
             };
             let at = if let JobInfo::Cron(at, _) = &jobinfo.info {

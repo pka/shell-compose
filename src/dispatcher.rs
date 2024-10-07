@@ -18,7 +18,7 @@ pub type Pid = u32;
 pub struct Dispatcher<'a> {
     procs: Arc<Mutex<Vec<Runner>>>,
     scheduler: Arc<Mutex<JobScheduler<'a>>>,
-    pub jobs: BTreeMap<JobId, JobInfo>,
+    jobs: BTreeMap<JobId, JobInfo>,
     cronjobs: HashMap<JobId, job_scheduler::Uuid>,
     /// Sender channel for Runner threads
     channel: mpsc::Sender<Pid>,
@@ -28,7 +28,6 @@ pub struct Dispatcher<'a> {
 pub enum JobInfo {
     Shell(Vec<String>),
     Service(String),
-    Group(String),
     Cron(String, Vec<String>),
 }
 
@@ -98,13 +97,14 @@ impl Dispatcher<'_> {
                 error!("{e}");
                 Message::Err(format!("{e}"))
             }
-            Ok(job_id) => Message::JobStarted(job_id),
+            Ok(job_ids) => Message::JobsStarted(job_ids),
         }
     }
     pub fn cli_command(&mut self, cmd: CliCommand, stream: &mut IpcStream) {
         info!("Executing `{cmd:?}`");
         let res = match cmd {
             CliCommand::Stop { job_id } => self.stop(job_id),
+            CliCommand::Down { group } => self.down(&group),
             CliCommand::Ps => self.ps(stream),
             CliCommand::Jobs => self.jobs(stream),
             CliCommand::Logs => self.log(stream),
@@ -120,28 +120,26 @@ impl Dispatcher<'_> {
         self.jobs.insert(job_id, job);
         job_id
     }
-    fn run(&mut self, args: &[String]) -> Result<JobId, DispatcherError> {
+    fn run(&mut self, args: &[String]) -> Result<Vec<JobId>, DispatcherError> {
         let job_id = self.add_job(JobInfo::Shell(args.to_vec()));
         self.spawn_job(job_id, args)?;
-        Ok(job_id)
+        Ok(vec![job_id])
     }
     fn spawn_job(&mut self, job_id: JobId, args: &[String]) -> Result<(), DispatcherError> {
         let child = Runner::spawn(job_id, args, self.channel.clone())?;
         self.procs.lock().expect("lock").push(child);
         // Wait for startup failure
         thread::sleep(Duration::from_millis(10));
-        if let Ok(procs) = self.procs.lock() {
-            if let Some(child) = procs.first() {
-                return match child.info.state {
-                    ProcStatus::ExitErr(code) => Err(DispatcherError::ProcExitError(code)),
-                    // ProcStatus::Unknown(e) => Err(DispatcherError::ProcSpawnError(e)),
-                    _ => Ok(()),
-                };
-            }
+        if let Some(child) = self.procs.lock().expect("lock").last() {
+            return match child.info.state {
+                ProcStatus::ExitErr(code) => Err(DispatcherError::ProcExitError(code)),
+                // ProcStatus::Unknown(e) => Err(DispatcherError::ProcSpawnError(e)),
+                _ => Ok(()),
+            };
         }
         Ok(())
     }
-    /// Stop process
+    /// Stop job
     fn stop(&mut self, job_id: JobId) -> Result<(), DispatcherError> {
         if let Some(uuid) = self.cronjobs.remove(&job_id) {
             info!("Removing cron job {job_id}");
@@ -152,11 +150,13 @@ impl Dispatcher<'_> {
             .lock()
             .expect("lock")
             .iter_mut()
-            .filter(|p| p.info.job_id == job_id)
-            .filter(|p| !p.info.state.exited())
+            .filter(|child| child.info.job_id == job_id)
         {
-            info!("Terminating process {}", child.proc.id());
-            child.proc.kill().map_err(DispatcherError::KillError)?;
+            if child.is_running() {
+                info!("Terminating process {}", child.proc.id());
+                // FIXME: Does not work for just commands! We have to kill its child process or exit just with Ctrl-C.
+                child.proc.kill().map_err(DispatcherError::KillError)?;
+            }
         }
         if self.jobs.remove(&job_id).is_some() {
             Ok(())
@@ -165,7 +165,7 @@ impl Dispatcher<'_> {
         }
     }
     /// Add cron job
-    fn run_at(&mut self, cron: &str, args: &[String]) -> Result<JobId, DispatcherError> {
+    fn run_at(&mut self, cron: &str, args: &[String]) -> Result<Vec<JobId>, DispatcherError> {
         let job_id = self.add_job(JobInfo::Cron(cron.to_string(), args.to_vec()));
         let job_args = args.to_vec();
         let procs = self.procs.clone();
@@ -179,30 +179,60 @@ impl Dispatcher<'_> {
                 procs.lock().expect("lock").push(child);
             }));
         self.cronjobs.insert(job_id, uuid);
-        Ok(job_id)
+        Ok(vec![job_id])
     }
-    /// Start service (just repipe)
-    fn start(&mut self, service: &str) -> Result<JobId, DispatcherError> {
-        let job_id = self.add_job(JobInfo::Service(service.to_string()));
-        self.start_service(job_id, service)?;
-        Ok(job_id)
-    }
-    fn start_service(&mut self, job_id: JobId, service: &str) -> Result<(), DispatcherError> {
-        self.spawn_job(
-            job_id,
-            vec!["just".to_string(), service.to_string()].as_slice(),
-        )
+    /// Start service (just recipe)
+    fn start(&mut self, service: &str) -> Result<Vec<JobId>, DispatcherError> {
+        // Find existing job or add new
+        let job_id = self
+            .jobs
+            .iter()
+            .find(|(_id, info)| matches!(info, JobInfo::Service(name) if name == service))
+            .map(|(id, _info)| *id)
+            .unwrap_or_else(|| self.add_job(JobInfo::Service(service.to_string())));
+        // Check for existing process for this service
+        let running = self
+            .procs
+            .lock()
+            .expect("lock")
+            .iter_mut()
+            .any(|child| child.info.job_id == job_id && child.is_running());
+        if running {
+            Ok(vec![])
+        } else {
+            self.spawn_job(
+                job_id,
+                vec!["just".to_string(), service.to_string()].as_slice(),
+            )?;
+            Ok(vec![job_id])
+        }
     }
     /// Start service group (all just repipes in group)
-    fn up(&mut self, group: &str) -> Result<JobId, DispatcherError> {
-        let job_id = self.add_job(JobInfo::Group(group.to_string()));
-        if let Ok(justfile) = Justfile::parse() {
-            let recipes = justfile.group_recipes(group);
-            for recipe in recipes {
-                self.start_service(job_id, &recipe)?;
-            }
+    fn up(&mut self, group: &str) -> Result<Vec<JobId>, DispatcherError> {
+        let mut job_ids = Vec::new();
+        let justfile = Justfile::parse()?;
+        let recipes = justfile.group_recipes(group);
+        for service in recipes {
+            let ids = self.start(&service)?;
+            job_ids.extend(ids);
         }
-        Ok(job_id)
+        Ok(job_ids)
+    }
+    /// Stop service group
+    fn down(&mut self, group: &str) -> Result<(), DispatcherError> {
+        let mut job_ids = Vec::new();
+        let justfile = Justfile::parse()?;
+        let recipes = justfile.group_recipes(group);
+        for service in recipes {
+            self.jobs
+                .iter()
+                .filter(|(_id, info)| matches!(info, JobInfo::Service(name) if *name == service))
+                .for_each(|(id, _info)| job_ids.push(*id));
+        }
+        for job_id in job_ids {
+            self.stop(job_id)?;
+        }
+        Ok(())
     }
     /// Return info about running and finished processes
     fn ps(&mut self, stream: &mut IpcStream) -> Result<(), DispatcherError> {

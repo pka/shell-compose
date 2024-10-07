@@ -9,12 +9,12 @@ pub struct Cli;
 /// Shared commands with background service
 #[derive(Subcommand, Debug, Serialize, Deserialize)]
 pub enum ExecCommand {
-    /// Execute shell command
+    /// Execute command
     Run {
         /// Command arguments
         args: Vec<String>,
     },
-    /// Execute shell command with cron schedule
+    /// Execute command with cron schedule
     Runat {
         /// Cron expression
         at: String,
@@ -36,11 +36,11 @@ pub enum ExecCommand {
 /// Additional commands
 #[derive(Subcommand, Debug, Serialize, Deserialize)]
 pub enum CliCommand {
-    // Stop service group
-    // Down {
-    //     /// Service group name
-    //     group: String,
-    // },
+    /// Stop service group
+    Down {
+        /// Service group name
+        group: String,
+    },
     /// Stop job
     Stop {
         /// Job id
@@ -59,14 +59,17 @@ pub enum CliCommand {
 /// IPC messages
 #[derive(Debug, Serialize, Deserialize)]
 pub enum Message {
+    // cli <-> Listener
     Connect,
+    // cli -> Listener
     ExecCommand(ExecCommand),
     CliCommand(CliCommand),
+    // cli <- Listener
     PsInfo(ProcInfo),
     JobInfo(Job),
     LogLine(LogLine),
     Ok,
-    JobStarted(JobId),
+    JobsStarted(Vec<JobId>),
     Err(String),
 }
 
