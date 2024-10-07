@@ -35,7 +35,7 @@ pub enum ProcStatus {
 }
 
 impl ProcStatus {
-    fn exited(&self) -> bool {
+    pub fn exited(&self) -> bool {
         matches!(self, ProcStatus::ExitOk | ProcStatus::ExitErr(_))
     }
 }

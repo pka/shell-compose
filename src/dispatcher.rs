@@ -46,6 +46,8 @@ pub enum DispatcherError {
     ProcSpawnTimeoutError,
     #[error("Failed to terminate child process: {0}")]
     KillError(std::io::Error),
+    #[error("Job {0} not found")]
+    JobNotFoundError(JobId),
     #[error("Process exit code: {0}")]
     ProcExitError(i32),
     #[error("Empty command")]
@@ -93,7 +95,7 @@ impl Dispatcher {
     pub fn cli_command(&mut self, cmd: CliCommand, stream: &mut IpcStream) {
         info!("Executing `{cmd:?}`");
         let res = match cmd {
-            CliCommand::Stop { pid } => self.stop(pid),
+            CliCommand::Stop { job_id } => self.stop(job_id),
             CliCommand::Ps => self.ps(stream),
             CliCommand::Jobs => self.jobs(stream),
             CliCommand::Logs => self.log(stream),
@@ -131,17 +133,23 @@ impl Dispatcher {
         Ok(())
     }
     /// Stop process
-    fn stop(&mut self, pid: Pid) -> Result<(), DispatcherError> {
-        if let Some(child) = self
+    fn stop(&mut self, job_id: JobId) -> Result<(), DispatcherError> {
+        for child in self
             .procs
             .lock()
             .expect("lock")
             .iter_mut()
-            .find(|p| p.info.pid == pid)
+            .filter(|p| p.info.job_id == job_id)
+            .filter(|p| !p.info.state.exited())
         {
+            info!("Terminating process {}", child.proc.id());
             child.proc.kill().map_err(DispatcherError::KillError)?;
         }
-        Ok(())
+        if self.jobs.remove(&job_id).is_some() {
+            Ok(())
+        } else {
+            Err(DispatcherError::JobNotFoundError(job_id))
+        }
     }
     /// Add cron job
     fn run_at(&mut self, cron: &str, args: &[String]) -> Result<JobId, DispatcherError> {

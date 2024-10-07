@@ -41,10 +41,10 @@ pub enum CliCommand {
     //     /// Service group name
     //     group: String,
     // },
-    /// Stop service or shell command
+    /// Stop job
     Stop {
-        /// Process id
-        pid: u32,
+        /// Job id
+        job_id: JobId,
     },
     /// List processes
     Ps,

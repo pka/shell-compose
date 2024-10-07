@@ -73,7 +73,7 @@ fn cli() -> Result<(), DispatcherError> {
             Ok(Message::Connect) => {}
             Ok(Message::Ok) => {
                 match msg {
-                    Message::ExecCommand(_) => {
+                    Message::ExecCommand(_) | Message::CliCommand(CliCommand::Stop { .. }) => {
                         info!(target: "dispatcher", "Command successful");
                     }
                     Message::CliCommand(CliCommand::Ps) => {
