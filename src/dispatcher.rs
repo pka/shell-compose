@@ -6,7 +6,7 @@ use chrono::{DateTime, Local, TimeZone};
 use job_scheduler_ng::{self as job_scheduler, JobScheduler};
 use log::{error, info};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::sync::{mpsc, Arc, Mutex};
 use std::thread;
 use std::time::Duration;
@@ -15,9 +15,11 @@ use thiserror::Error;
 pub type JobId = u32;
 pub type Pid = u32;
 
-pub struct Dispatcher {
+pub struct Dispatcher<'a> {
     procs: Arc<Mutex<Vec<Runner>>>,
-    pub jobs: HashMap<JobId, JobInfo>,
+    scheduler: Arc<Mutex<JobScheduler<'a>>>,
+    pub jobs: BTreeMap<JobId, JobInfo>,
+    cronjobs: HashMap<JobId, job_scheduler::Uuid>,
     /// Sender channel for Runner threads
     channel: mpsc::Sender<Pid>,
 }
@@ -62,17 +64,24 @@ pub enum DispatcherError {
     CronError(#[from] cron::error::Error),
 }
 
-impl Dispatcher {
-    pub fn create() -> Self {
+impl Dispatcher<'_> {
+    pub fn create() -> Dispatcher<'static> {
         let procs = Arc::new(Mutex::new(Vec::new()));
-        let procs_watcher = procs.clone();
-        let jobs = HashMap::new();
+        let scheduler = Arc::new(Mutex::new(JobScheduler::new()));
+
+        let scheduler_spawn = scheduler.clone();
+        let _handle = thread::spawn(move || cron_scheduler(scheduler_spawn));
+
         let (send, recv) = mpsc::channel();
-        let watcher_send = send.clone();
-        let _watcher = thread::spawn(move || child_watcher(procs_watcher, watcher_send, recv));
+        let send_spawn = send.clone();
+        let procs_spawn = procs.clone();
+        let _watcher = thread::spawn(move || child_watcher(procs_spawn, send_spawn, recv));
+
         Dispatcher {
             procs,
-            jobs,
+            scheduler,
+            jobs: BTreeMap::new(),
+            cronjobs: HashMap::new(),
             channel: send,
         }
     }
@@ -118,7 +127,7 @@ impl Dispatcher {
     }
     fn spawn_job(&mut self, job_id: JobId, args: &[String]) -> Result<(), DispatcherError> {
         let child = Runner::spawn(job_id, args, self.channel.clone())?;
-        self.procs.lock().expect("lock").insert(0, child);
+        self.procs.lock().expect("lock").push(child);
         // Wait for startup failure
         thread::sleep(Duration::from_millis(10));
         if let Ok(procs) = self.procs.lock() {
@@ -134,6 +143,10 @@ impl Dispatcher {
     }
     /// Stop process
     fn stop(&mut self, job_id: JobId) -> Result<(), DispatcherError> {
+        if let Some(uuid) = self.cronjobs.remove(&job_id) {
+            info!("Removing cron job {job_id}");
+            self.scheduler.lock().expect("lock").remove(uuid);
+        }
         for child in self
             .procs
             .lock()
@@ -154,25 +167,18 @@ impl Dispatcher {
     /// Add cron job
     fn run_at(&mut self, cron: &str, args: &[String]) -> Result<JobId, DispatcherError> {
         let job_id = self.add_job(JobInfo::Cron(cron.to_string(), args.to_vec()));
-        let mut scheduler = JobScheduler::new();
         let job_args = args.to_vec();
         let procs = self.procs.clone();
         let channel = self.channel.clone();
-        let _uuid = scheduler.add(job_scheduler::Job::new(cron.parse()?, move || {
-            let child = Runner::spawn(job_id, &job_args, channel.clone()).unwrap();
-            procs.lock().expect("lock").insert(0, child);
-        }));
-        let _handle = thread::spawn(move || loop {
-            // Should we use same scheduler and thread for all cron jobs?
-            scheduler.tick();
-            let wait_time = scheduler.time_till_next_job();
-            if wait_time == Duration::from_millis(0) {
-                // no future execution time -> exit
-                info!("Ending cron job");
-                break;
-            }
-            std::thread::sleep(wait_time);
-        });
+        let uuid = self
+            .scheduler
+            .lock()
+            .expect("lock")
+            .add(job_scheduler::Job::new(cron.parse()?, move || {
+                let child = Runner::spawn(job_id, &job_args, channel.clone()).unwrap();
+                procs.lock().expect("lock").push(child);
+            }));
+        self.cronjobs.insert(job_id, uuid);
         Ok(job_id)
     }
     /// Start service (just repipe)
@@ -200,7 +206,7 @@ impl Dispatcher {
     }
     /// Return info about running and finished processes
     fn ps(&mut self, stream: &mut IpcStream) -> Result<(), DispatcherError> {
-        for child in &mut self.procs.lock().expect("lock").iter_mut() {
+        for child in &mut self.procs.lock().expect("lock").iter_mut().rev() {
             let info = child.update_proc_info();
             if stream.send_message(&Message::PsInfo(info.clone())).is_err() {
                 info!("Aborting ps command (stream error)");
@@ -211,7 +217,7 @@ impl Dispatcher {
     }
     /// Return info about jobs
     fn jobs(&mut self, stream: &mut IpcStream) -> Result<(), DispatcherError> {
-        for (id, info) in &mut self.jobs.iter() {
+        for (id, info) in self.jobs.iter().rev() {
             let job = Job {
                 id: *id,
                 info: info.clone(),
@@ -252,6 +258,18 @@ impl Dispatcher {
     }
 }
 
+fn cron_scheduler(scheduler: Arc<Mutex<JobScheduler<'static>>>) {
+    loop {
+        let wait_time = if let Ok(mut scheduler) = scheduler.lock() {
+            scheduler.tick();
+            scheduler.time_till_next_job()
+        } else {
+            Duration::from_millis(50)
+        };
+        std::thread::sleep(wait_time);
+    }
+}
+
 // sender: Sender channel for Runner threads
 // recv: Watcher receiver channel
 fn child_watcher(
@@ -276,7 +294,7 @@ fn child_watcher(
                     let result =
                         Runner::spawn(child.info.job_id, &child.info.cmd_args, sender.clone());
                     match result {
-                        Ok(child) => procs.insert(0, child),
+                        Ok(child) => procs.push(child),
                         Err(e) => error!("Error trying to respawn failed process: {e}"),
                     }
                 }
