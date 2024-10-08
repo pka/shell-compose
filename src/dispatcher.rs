@@ -10,6 +10,7 @@ use std::collections::{BTreeMap, HashMap};
 use std::sync::{mpsc, Arc, Mutex};
 use std::thread;
 use std::time::Duration;
+use sysinfo::{ProcessRefreshKind, RefreshKind, System};
 use thiserror::Error;
 
 pub type JobId = u32;
@@ -19,6 +20,7 @@ pub struct Dispatcher<'a> {
     procs: Arc<Mutex<Vec<Runner>>>,
     scheduler: Arc<Mutex<JobScheduler<'a>>>,
     jobs: BTreeMap<JobId, JobInfo>,
+    last_job_id: JobId,
     cronjobs: HashMap<JobId, job_scheduler::Uuid>,
     /// Sender channel for Runner threads
     channel: mpsc::Sender<Pid>,
@@ -80,6 +82,7 @@ impl Dispatcher<'_> {
             procs,
             scheduler,
             jobs: BTreeMap::new(),
+            last_job_id: 0,
             cronjobs: HashMap::new(),
             channel: send,
         }
@@ -116,9 +119,9 @@ impl Dispatcher<'_> {
         let _ = stream.send_message(&res.into());
     }
     fn add_job(&mut self, job: JobInfo) -> JobId {
-        let job_id = self.jobs.keys().max().unwrap_or(&0) + 1;
-        self.jobs.insert(job_id, job);
-        job_id
+        self.last_job_id += 1;
+        self.jobs.insert(self.last_job_id, job);
+        self.last_job_id
     }
     fn run(&mut self, args: &[String]) -> Result<Vec<JobId>, DispatcherError> {
         let job_id = self.add_job(JobInfo::Shell(args.to_vec()));
@@ -153,9 +156,28 @@ impl Dispatcher<'_> {
             .filter(|child| child.info.job_id == job_id)
         {
             if child.is_running() {
-                info!("Terminating process {}", child.proc.id());
-                // FIXME: Does not work for just commands! We have to kill its child process or exit just with Ctrl-C.
-                child.proc.kill().map_err(DispatcherError::KillError)?;
+                if child.info.cmd_args.first().unwrap_or(&"".to_string()) == "just" {
+                    // just does not propagate signals, so we have to kill its child process
+                    let just_pid = child.proc.id() as usize;
+                    let system = System::new_with_specifics(
+                        RefreshKind::new().with_processes(ProcessRefreshKind::new()),
+                    );
+                    if let Some((pid, process)) =
+                        system.processes().iter().find(|(_pid, process)| {
+                            process.parent().unwrap_or(0.into()) == just_pid.into()
+                                && process.name() != "ctrl-c"
+                        })
+                    {
+                        info!("Terminating process {pid} (parent process {just_pid})");
+                        process.kill(); // process.kill_with(Signal::Term)
+                    }
+                    // In an interactive terminal session, sending Ctrl-C terminates the running process.
+                    // let mut stdin = child.proc.stdin.take().unwrap();
+                    // stdin.write_all(&[3]).map_err(DispatcherError::KillError)?;
+                } else {
+                    info!("Terminating process {}", child.proc.id());
+                    child.proc.kill().map_err(DispatcherError::KillError)?;
+                }
             }
         }
         if self.jobs.remove(&job_id).is_some() {
@@ -311,14 +333,25 @@ fn child_watcher(
         // PID of terminated process sent from output_listener
         let pid = recv.recv().unwrap();
         let ts = Local::now();
-        info!(target: &format!("{pid}"), "Process terminated");
         if let Ok(mut procs) = procs.lock() {
             if let Some(child) = procs.iter_mut().find(|p| p.info.pid == pid) {
                 // https://doc.rust-lang.org/std/process/struct.Child.html#warning
-                let _ = child.proc.wait();
+                let exit_code = child.proc.wait().ok().and_then(|st| st.code());
                 let _ = child.update_proc_info();
                 child.info.end = Some(ts);
-                let respawn = matches!(child.info.state, ProcStatus::ExitErr(code) if code > 0);
+                if let Some(code) = exit_code {
+                    info!(target: &format!("{pid}"), "Process terminated with exit code {code}");
+                } else {
+                    info!(target: &format!("{pid}"), "Process terminated");
+                }
+                let mincode = if child.info.cmd_args.first().unwrap_or(&"".to_string()) == "just" {
+                    // just exits with code 1 when child process is terminated (130 when ctrl-c handler exits)
+                    1
+                } else {
+                    0
+                };
+                let respawn =
+                    matches!(child.info.state, ProcStatus::ExitErr(code) if code > mincode);
                 if respawn {
                     thread::sleep(Duration::from_millis(50));
                     let result =
@@ -329,7 +362,7 @@ fn child_watcher(
                     }
                 }
             } else {
-                error!("PID {pid} of terminating process not found");
+                info!(target: &format!("{pid}"), "(Unknown) process terminated");
             }
         }
     }

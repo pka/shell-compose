@@ -57,7 +57,7 @@ impl LogLine {
         let pid = self.pid;
         let line = &self.line;
         let color = formatter.log_color_proc(job_id as usize, self.is_stderr);
-        println!("{color}{dt} [{job_id}/{pid}] {line}{color:#}");
+        println!("{color}{dt} [{job_id}|{pid}] {line}{color:#}");
     }
 }
 
@@ -106,6 +106,7 @@ impl Runner {
 
         let mut child = Command::new(exe)
             .args(cmd)
+            .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .spawn()
@@ -184,9 +185,9 @@ fn output_listener<R: Read>(
     reader.lines().map_while(Result::ok).for_each(|line| {
         let ts = Local::now();
         if is_stderr {
-            eprintln!("[{job_id}/{pid}] {line}");
+            eprintln!("[{job_id}|{pid}] {line}");
         } else {
-            println!("[[{job_id}/{pid}] {line}");
+            println!("[[{job_id}|{pid}] {line}");
         }
         if let Ok(mut buffer) = buffer.lock() {
             let entry = LogLine {
