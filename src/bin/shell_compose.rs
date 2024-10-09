@@ -51,7 +51,10 @@ fn cli() -> Result<(), DispatcherError> {
     init_cli_logger();
 
     if IpcStream::check_connection(SOCKET_NAME).is_err() {
-        // TODO: return if CliCommand::Exit
+        if matches!(cli_command, Ok(CliCommand::Exit)) {
+            // Background process already exited
+            return Ok(());
+        }
         info!(target: "dispatcher", "Starting background process");
         let dispatcher = DispatcherProc::spawn();
         dispatcher.wait(2000)?;
