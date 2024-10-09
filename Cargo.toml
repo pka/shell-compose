@@ -1,10 +1,10 @@
 [package]
 name = "shell-compose"
-version = "0.1.3"
+version = "0.2.0"
 readme = "README.md"
-description = "Lightweight background process runner for long-running or scheduled tasks"
+description = "Lightweight background process runner for long-running or scheduled jobs"
 categories = ["command-line-utilities"]
-keywords = ["shell", "command", "parallel", "task", "runner"]
+keywords = ["shell", "command", "parallel", "job", "runner"]
 authors = ["Pirmin Kalberer <pirmin.kalberer@gmail.com>"]
 homepage = "https://github.com/pka/shell-compose"
 repository = "https://github.com/pka/shell-compose"

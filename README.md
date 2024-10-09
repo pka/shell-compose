@@ -1,22 +1,28 @@
 # Shell Compose
 
-Shell Compose is a lightweight background process runner for long-running or scheduled tasks.
+Shell Compose is a lightweight background process runner for long-running or scheduled jobs.
 
 ![Shell Compose](https://raw.githubusercontent.com/pka/shell-compose/main/screencast.gif)
 
 ## Features
 
 * Scheduling
-  - [x] Run background tasks from the command line
-  - [x] Run multiple tasks in parallel
-  - [x] Schedule tasks to run like a cron job
+  - [x] Run background jobs from the command line
+  - [x] Run multiple jobs in parallel
+  - [x] Schedule commands to run like a cron job
   - [x] Start `just` recipes
   - [ ] Configure commands and cron jobs in a YAML file
-  - [ ] Attach console to running task
-  - [ ] Restarting failed tasks
-* Logging
-  - [x] Show logs of all running tasks
-  - [ ] Show logs of selected tasks
+  - [x] Support task dependencies (via Justfile)
+  - [ ] Attach console to running job
+  - [x] Restarting failed jobs
+  - [ ] Trigger execution by file change
+  - [ ] Trigger execution by calling HTTP endpoint
+* Observability
+  - [x] Show process status
+  - [ ] Show process resource usage
+  - [x] Show logs of all running jobs
+  - [x] Show logs of selected jobs
+  - [ ] Metrics endpoint
 * Cross Platform
   - [x] Linux
   - [x] MacOS
