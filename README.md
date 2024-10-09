@@ -15,7 +15,7 @@ Shell Compose is a lightweight background process runner for long-running or sch
   - [x] Support task dependencies (via Justfile)
   - [ ] Attach console to running job
   - [x] Restarting failed jobs
-  - [ ] Trigger execution by file change
+  - [ ] Trigger execution by file changes
   - [ ] Trigger execution by calling HTTP endpoint
 * Observability
   - [x] Show process status
@@ -85,7 +85,7 @@ curl --proto '=https' --tlsv1.2 -LsSf https://github.com/pka/shell-compose/relea
 #### Windows PowerShell:
 
 ```sh
-powershell -c "irm https://github.com/pka/shell-compose/releases/latest/download/shell-compose-installer.ps1 | iex"
+powershell -ExecutionPolicy ByPass -c "irm https://github.com/pka/shell-compose/releases/latest/download/shell-compose-installer.ps1 | iex"
 ```
 
 ### Other Options
