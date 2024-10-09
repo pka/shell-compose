@@ -7,6 +7,7 @@ use job_scheduler_ng::{self as job_scheduler, JobScheduler};
 use log::{error, info};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap};
+use std::str::FromStr;
 use std::sync::{mpsc, Arc, Mutex};
 use std::thread;
 use std::time::Duration;
@@ -51,6 +52,8 @@ pub enum DispatcherError {
     KillError(std::io::Error),
     #[error("Job {0} not found")]
     JobNotFoundError(JobId),
+    #[error("Service `{0}` not found")]
+    ServiceNotFoundError(String),
     #[error("Process exit code: {0}")]
     ProcExitError(i32),
     #[error("Empty command")]
@@ -110,7 +113,7 @@ impl Dispatcher<'_> {
             CliCommand::Down { group } => self.down(&group),
             CliCommand::Ps => self.ps(stream),
             CliCommand::Jobs => self.jobs(stream),
-            CliCommand::Logs => self.log(stream),
+            CliCommand::Logs { job_or_service } => self.log(job_or_service, stream),
             CliCommand::Exit => std::process::exit(0),
         };
         if let Err(e) = &res {
@@ -122,6 +125,12 @@ impl Dispatcher<'_> {
         self.last_job_id += 1;
         self.jobs.insert(self.last_job_id, job);
         self.last_job_id
+    }
+    fn find_job(&self, service: &str) -> Option<JobId> {
+        self.jobs
+            .iter()
+            .find(|(_id, info)| matches!(info, JobInfo::Service(name) if *name == service))
+            .map(|(id, _info)| *id)
     }
     fn run(&mut self, args: &[String]) -> Result<Vec<JobId>, DispatcherError> {
         let job_id = self.add_job(JobInfo::Shell(args.to_vec()));
@@ -207,10 +216,7 @@ impl Dispatcher<'_> {
     fn start(&mut self, service: &str) -> Result<Vec<JobId>, DispatcherError> {
         // Find existing job or add new
         let job_id = self
-            .jobs
-            .iter()
-            .find(|(_id, info)| matches!(info, JobInfo::Service(name) if name == service))
-            .map(|(id, _info)| *id)
+            .find_job(service)
             .unwrap_or_else(|| self.add_job(JobInfo::Service(service.to_string())));
         // Check for existing process for this service
         let running = self
@@ -282,7 +288,25 @@ impl Dispatcher<'_> {
         Ok(())
     }
     /// Return log lines
-    fn log(&mut self, stream: &mut IpcStream) -> Result<(), DispatcherError> {
+    fn log(
+        &mut self,
+        job_or_service: Option<String>,
+        stream: &mut IpcStream,
+    ) -> Result<(), DispatcherError> {
+        let mut job_id_filter = 0;
+        if let Some(job_or_service) = job_or_service {
+            if let Ok(job_id) = JobId::from_str(&job_or_service) {
+                if self.jobs.contains_key(&job_id) {
+                    job_id_filter = job_id;
+                } else {
+                    return Err(DispatcherError::JobNotFoundError(job_id));
+                }
+            } else {
+                job_id_filter = self
+                    .find_job(&job_or_service)
+                    .ok_or(DispatcherError::ServiceNotFoundError(job_or_service))?;
+            }
+        }
         let mut last_seen_ts: HashMap<Pid, DateTime<Local>> = HashMap::new();
         'cmd: loop {
             for child in self.procs.lock().expect("lock").iter_mut() {
@@ -292,6 +316,9 @@ impl Dispatcher<'_> {
                         .entry(child.proc.id())
                         .or_insert(Local.timestamp_opt(0, 0).unwrap());
                     for entry in output.lines_since(last_seen) {
+                        if entry.job_id != job_id_filter {
+                            continue;
+                        }
                         if stream
                             .send_message(&Message::LogLine(entry.clone()))
                             .is_err()

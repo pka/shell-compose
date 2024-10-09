@@ -51,7 +51,11 @@ pub enum CliCommand {
     /// List active jobs
     Jobs,
     /// Show process logs
-    Logs,
+    Logs {
+        /// Job id or service name
+        job_or_service: Option<String>,
+        // --tail: Option<usize>,
+    },
     /// Stop all processes
     Exit,
 }
