@@ -106,7 +106,7 @@ impl Runner {
 
         let mut child = Command::new(exe)
             .args(cmd)
-            .stdin(Stdio::piped())
+            // .stdin(Stdio::piped()) // Blocks logs command on Windows
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .spawn()
