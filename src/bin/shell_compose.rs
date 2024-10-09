@@ -44,9 +44,14 @@ fn cli() -> Result<(), DispatcherError> {
     let cli = Cli::command();
     let cli = ExecCommand::augment_subcommands(cli);
     let cli = CliCommand::augment_subcommands(cli);
-    let matches = cli.get_matches();
+    let mut cli = cli.about(env!("CARGO_PKG_DESCRIPTION")); // Overwritten by augment_subcommands
+    let matches = cli.clone().get_matches();
     let exec_command = ExecCommand::from_arg_matches(&matches);
     let cli_command = CliCommand::from_arg_matches(&matches);
+    if exec_command.is_err() && cli_command.is_err() {
+        cli.print_help().ok();
+        return Ok(());
+    }
 
     init_cli_logger();
 

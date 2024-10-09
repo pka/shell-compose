@@ -7,6 +7,7 @@ use shell_compose::{
 fn run_server() {
     let cli = Cli::command();
     let cli = ExecCommand::augment_subcommands(cli);
+    let cli = cli.about(env!("CARGO_PKG_DESCRIPTION")); // Overwritten by augment_subcommands
     let matches = cli.clone().get_matches();
     let exec_command = ExecCommand::from_arg_matches(&matches);
 
