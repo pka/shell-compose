@@ -285,10 +285,12 @@ impl Dispatcher<'_> {
                     .ok_or(DispatcherError::ServiceNotFoundError(job_or_service))?;
             }
         }
+
         let mut last_seen_ts: HashMap<Pid, DateTime<Local>> = HashMap::new();
-        'cmd: loop {
+        'logwait: loop {
+            // Collect log entries from child proceses
+            let mut log_lines = Vec::new();
             for child in self.procs.lock().expect("lock").iter_mut() {
-                // TODO: buffered log lines should be sorted by time instead by process+time
                 if let Ok(output) = child.output.lock() {
                     let last_seen = last_seen_ts
                         .entry(child.proc.id())
@@ -297,17 +299,23 @@ impl Dispatcher<'_> {
                         if entry.job_id != job_id_filter {
                             continue;
                         }
-                        if stream
-                            .send_message(&Message::LogLine(entry.clone()))
-                            .is_err()
-                        {
-                            info!("Aborting log command (stream error)");
-                            break 'cmd;
-                        }
+                        log_lines.push(entry.clone());
                     }
                 }
             }
-            stream.alive()?;
+
+            if log_lines.is_empty() {
+                // Exit when client is disconnected
+                stream.alive()?;
+            } else {
+                log_lines.sort_by_key(|entry| entry.ts);
+                for entry in log_lines {
+                    if stream.send_message(&Message::LogLine(entry)).is_err() {
+                        info!("Aborting log command (stream error)");
+                        break 'logwait;
+                    }
+                }
+            }
             // Wait for new output
             thread::sleep(Duration::from_millis(100));
         }
