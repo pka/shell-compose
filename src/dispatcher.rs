@@ -271,18 +271,19 @@ impl Dispatcher<'_> {
         job_or_service: Option<String>,
         stream: &mut IpcStream,
     ) -> Result<(), DispatcherError> {
-        let mut job_id_filter = 0;
+        let mut job_id_filter = None;
         if let Some(job_or_service) = job_or_service {
             if let Ok(job_id) = JobId::from_str(&job_or_service) {
                 if self.jobs.contains_key(&job_id) {
-                    job_id_filter = job_id;
+                    job_id_filter = Some(job_id);
                 } else {
                     return Err(DispatcherError::JobNotFoundError(job_id));
                 }
             } else {
-                job_id_filter = self
-                    .find_job(&job_or_service)
-                    .ok_or(DispatcherError::ServiceNotFoundError(job_or_service))?;
+                job_id_filter = Some(
+                    self.find_job(&job_or_service)
+                        .ok_or(DispatcherError::ServiceNotFoundError(job_or_service))?,
+                );
             }
         }
 
@@ -296,8 +297,10 @@ impl Dispatcher<'_> {
                         .entry(child.proc.id())
                         .or_insert(Local.timestamp_millis_opt(0).single().expect("ts"));
                     for entry in output.lines_since(last_seen) {
-                        if entry.job_id != job_id_filter {
-                            continue;
+                        if let Some(job_id) = job_id_filter {
+                            if entry.job_id != job_id {
+                                continue;
+                            }
                         }
                         log_lines.push(entry.clone());
                     }
