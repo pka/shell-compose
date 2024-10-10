@@ -292,7 +292,7 @@ impl Dispatcher<'_> {
                 if let Ok(output) = child.output.lock() {
                     let last_seen = last_seen_ts
                         .entry(child.proc.id())
-                        .or_insert(Local.timestamp_opt(0, 0).unwrap());
+                        .or_insert(Local.timestamp_millis_opt(0).single().expect("ts"));
                     for entry in output.lines_since(last_seen) {
                         if entry.job_id != job_id_filter {
                             continue;
@@ -336,38 +336,42 @@ fn child_watcher(
 ) {
     loop {
         // PID of terminated process sent from output_listener
-        let pid = recv.recv().unwrap();
+        let pid = recv.recv().expect("recv");
         let ts = Local::now();
-        if let Ok(mut procs) = procs.lock() {
-            if let Some(child) = procs.iter_mut().find(|p| p.info.pid == pid) {
-                // https://doc.rust-lang.org/std/process/struct.Child.html#warning
-                let exit_code = child.proc.wait().ok().and_then(|st| st.code());
-                let _ = child.update_proc_info();
-                child.info.end = Some(ts);
-                if let Some(code) = exit_code {
-                    info!(target: &format!("{pid}"), "Process terminated with exit code {code}");
-                } else {
-                    info!(target: &format!("{pid}"), "Process terminated");
-                }
-                let mincode = if child.program() == "just" {
-                    // just exits with code 1 when child process is terminated (130 when ctrl-c handler exits)
-                    1
-                } else {
-                    0
-                };
-                let respawn =
-                    matches!(child.info.state, ProcStatus::ExitErr(code) if code > mincode);
-                if respawn {
-                    thread::sleep(Duration::from_millis(50));
-                    let result =
-                        Runner::spawn(child.info.job_id, &child.info.cmd_args, sender.clone());
-                    match result {
-                        Ok(child) => procs.push(child),
-                        Err(e) => error!("Error trying to respawn failed process: {e}"),
-                    }
-                }
+        let mut respawn_child = None;
+        if let Some(child) = procs
+            .lock()
+            .expect("lock")
+            .iter_mut()
+            .find(|p| p.info.pid == pid)
+        {
+            // https://doc.rust-lang.org/std/process/struct.Child.html#warning
+            let exit_code = child.proc.wait().ok().and_then(|st| st.code());
+            let _ = child.update_proc_info();
+            child.info.end = Some(ts);
+            if let Some(code) = exit_code {
+                info!(target: &format!("{pid}"), "Process terminated with exit code {code}");
             } else {
-                info!(target: &format!("{pid}"), "(Unknown) process terminated");
+                info!(target: &format!("{pid}"), "Process terminated");
+            }
+            let mincode = if child.program() == "just" {
+                // just exits with code 1 when child process is terminated (130 when ctrl-c handler exits)
+                1
+            } else {
+                0
+            };
+            if matches!(child.info.state, ProcStatus::ExitErr(code) if code > mincode) {
+                respawn_child = Some(child.info.clone());
+            }
+        } else {
+            info!(target: &format!("{pid}"), "(Unknown) process terminated");
+        }
+        if let Some(child_info) = respawn_child {
+            thread::sleep(Duration::from_millis(50));
+            let result = Runner::spawn(child_info.job_id, &child_info.cmd_args, sender.clone());
+            match result {
+                Ok(child) => procs.lock().expect("lock").push(child),
+                Err(e) => error!("Error trying to respawn failed process: {e}"),
             }
         }
     }
