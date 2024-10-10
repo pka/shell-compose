@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.1 - 2024-10-10
+
+- Fix log output without filter
+- Sort buffered log entries by timestamp
+
 ## 0.2.0 - 2024-10-09
 
 - `jobs` command listing active jobs
