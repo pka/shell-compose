@@ -27,6 +27,12 @@ pub struct ProcInfo {
     pub end: Option<DateTime<Local>>,
 }
 
+impl ProcInfo {
+    pub fn program(&self) -> &str {
+        self.cmd_args.first().map(|s| s.as_str()).unwrap_or("")
+    }
+}
+
 #[derive(Clone, Serialize, Deserialize, Debug)]
 pub enum ProcStatus {
     Spawned,
@@ -165,14 +171,11 @@ impl Runner {
         }
         &self.info
     }
-    pub fn program(&self) -> &str {
-        self.info.cmd_args.first().map(|s| s.as_str()).unwrap_or("")
-    }
     pub fn is_running(&mut self) -> bool {
         !self.update_proc_info().state.exited()
     }
     pub fn terminate(&mut self) -> Result<(), std::io::Error> {
-        if self.program() == "just" {
+        if self.info.program() == "just" {
             // just does not propagate signals, so we have to kill its child process
             let just_pid = self.proc.id() as usize;
             let system = System::new_with_specifics(

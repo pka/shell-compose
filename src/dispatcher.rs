@@ -365,12 +365,8 @@ fn child_watcher(
             } else {
                 info!(target: &format!("{pid}"), "Process terminated");
             }
-            let mincode = if child.program() == "just" {
-                // just exits with code 1 when child process is terminated (130 when ctrl-c handler exits)
-                1
-            } else {
-                0
-            };
+            // just exits with code 1 when child process is terminated (130 when ctrl-c handler exits)
+            let mincode = if child.info.program() == "just" { 1 } else { 0 };
             if matches!(child.info.state, ProcStatus::ExitErr(code) if code > mincode) {
                 respawn_child = Some(child.info.clone());
             }
