@@ -32,11 +32,11 @@ Shell Compose is a lightweight background process runner for long-running or sch
 
 [just](https://just.systems/man/en/) is a command runner with syntax inspired by `make`.
 It supports shell commands but also other languages like Python or NodeJS. 
-Task can have dependencies and variables loaded from `.env` files.
+Tasks can have dependencies and variables loaded from `.env` files.
 
 Example:
 
-```just
+```make
 # Simulate data processing
 [group('autostart')]
 processing:
@@ -67,6 +67,8 @@ Running all recipes in a group:
 ```
 shell-compose up autostart
 ```
+
+<div class="oranda-hide">
 
 ## Installation
 
@@ -104,3 +106,5 @@ For users who need to install shell-compose on platforms that we do not yet prov
 ```sh
 cargo install shell-compose --locked
 ```
+
+</div>

@@ -1,0 +1,21 @@
+{
+  "build": {
+    "path_prefix": "shell-compose"
+  },
+  "styles": {
+    "theme": "hacker"
+  },
+  "components": {
+    "changelog": true,
+    "artifacts": {
+      "package_managers": {
+        "preferred": {
+        },
+        "additional": {
+          "cargo-binstall": "cargo binstall shell-compose",
+          "crates.io": "cargo install shell-compose --locked"
+        }
+      }
+    }
+  }
+}
