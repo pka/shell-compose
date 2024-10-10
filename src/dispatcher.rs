@@ -11,7 +11,6 @@ use std::str::FromStr;
 use std::sync::{mpsc, Arc, Mutex};
 use std::thread;
 use std::time::Duration;
-use sysinfo::{ProcessRefreshKind, RefreshKind, System};
 use thiserror::Error;
 
 pub type JobId = u32;
@@ -165,28 +164,7 @@ impl Dispatcher<'_> {
             .filter(|child| child.info.job_id == job_id)
         {
             if child.is_running() {
-                if child.info.cmd_args.first().unwrap_or(&"".to_string()) == "just" {
-                    // just does not propagate signals, so we have to kill its child process
-                    let just_pid = child.proc.id() as usize;
-                    let system = System::new_with_specifics(
-                        RefreshKind::new().with_processes(ProcessRefreshKind::new()),
-                    );
-                    if let Some((pid, process)) =
-                        system.processes().iter().find(|(_pid, process)| {
-                            process.parent().unwrap_or(0.into()) == just_pid.into()
-                                && process.name() != "ctrl-c"
-                        })
-                    {
-                        info!("Terminating process {pid} (parent process {just_pid})");
-                        process.kill(); // process.kill_with(Signal::Term)
-                    }
-                    // In an interactive terminal session, sending Ctrl-C terminates the running process.
-                    // let mut stdin = child.proc.stdin.take().unwrap();
-                    // stdin.write_all(&[3]).map_err(DispatcherError::KillError)?;
-                } else {
-                    info!("Terminating process {}", child.proc.id());
-                    child.proc.kill().map_err(DispatcherError::KillError)?;
-                }
+                child.terminate().map_err(DispatcherError::KillError)?;
             }
         }
         if self.jobs.remove(&job_id).is_some() {
@@ -371,7 +349,7 @@ fn child_watcher(
                 } else {
                     info!(target: &format!("{pid}"), "Process terminated");
                 }
-                let mincode = if child.info.cmd_args.first().unwrap_or(&"".to_string()) == "just" {
+                let mincode = if child.program() == "just" {
                     // just exits with code 1 when child process is terminated (130 when ctrl-c handler exits)
                     1
                 } else {

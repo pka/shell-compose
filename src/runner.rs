@@ -1,11 +1,13 @@
 use crate::{DispatcherError, Formatter, JobId, Pid};
 use chrono::{DateTime, Local};
+use log::info;
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
 use std::io::{BufRead, BufReader, Read};
 use std::process::{Child, Command, Stdio};
 use std::sync::{mpsc, Arc, Mutex};
 use std::thread;
+use sysinfo::{ProcessRefreshKind, RefreshKind, System};
 
 /// Child process controller
 pub struct Runner {
@@ -163,14 +165,40 @@ impl Runner {
         }
         &self.info
     }
+    pub fn program(&self) -> &str {
+        self.info.cmd_args.first().map(|s| s.as_str()).unwrap_or("")
+    }
     pub fn is_running(&mut self) -> bool {
         !self.update_proc_info().state.exited()
+    }
+    pub fn terminate(&mut self) -> Result<(), std::io::Error> {
+        if self.program() == "just" {
+            // just does not propagate signals, so we have to kill its child process
+            let just_pid = self.proc.id() as usize;
+            let system = System::new_with_specifics(
+                RefreshKind::new().with_processes(ProcessRefreshKind::new()),
+            );
+            if let Some((pid, process)) = system.processes().iter().find(|(_pid, process)| {
+                process.parent().unwrap_or(0.into()) == just_pid.into()
+                    && process.name() != "ctrl-c"
+            }) {
+                info!("Terminating process {pid} (parent process {just_pid})");
+                process.kill(); // process.kill_with(Signal::Term)
+            }
+            // In an interactive terminal session, sending Ctrl-C terminates the running process.
+            // let mut stdin = self.proc.stdin.take().unwrap();
+            // stdin.write_all(&[3])?;
+        } else {
+            info!("Terminating process {}", self.proc.id());
+            self.proc.kill()?;
+        }
+        Ok(())
     }
 }
 
 impl Drop for Runner {
     fn drop(&mut self) {
-        self.proc.kill().unwrap();
+        self.terminate().ok();
     }
 }
 
