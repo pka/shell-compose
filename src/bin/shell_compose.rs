@@ -19,7 +19,20 @@ impl DispatcherProc {
                 .replace("compose", "composed"),
         );
         let mut proc = process::Command::new(exe);
-        let proc = if env::var("RUST_LOG").unwrap_or("".to_string()) == "debug" {
+        #[cfg(target_os = "windows")]
+        {
+            use std::os::windows::process::CommandExt;
+            const CREATE_NO_WINDOW: u32 = 0x08000000;
+            // CREATE_NO_WINDOW causes all children to not show a visible console window,
+            // but it also apparently has the effect of starting a new process group.
+            //
+            // https://learn.microsoft.com/en-us/windows/win32/procthread/process-creation-flags#flags
+            // https://stackoverflow.com/a/71364777/9423933
+            proc.creation_flags(CREATE_NO_WINDOW);
+
+            // See https://stackoverflow.com/a/78989930 for a possible alternative.
+        }
+        if env::var("RUST_LOG").unwrap_or("".to_string()) == "debug" {
             proc.env("RUST_LOG", "debug")
         } else {
             proc.stdout(Stdio::null()).stderr(Stdio::null())
