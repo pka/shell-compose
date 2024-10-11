@@ -1,4 +1,8 @@
+<div class="oranda-hide">
+
 # Shell Compose
+
+</div>
 
 Shell Compose is a lightweight background process runner for long-running or scheduled jobs.
 
@@ -6,6 +10,7 @@ Shell Compose is a lightweight background process runner for long-running or sch
 
 ## Features
 
+<pre>
 * Scheduling
   - [x] Run background jobs from the command line
   - [x] Run multiple jobs in parallel
@@ -27,6 +32,7 @@ Shell Compose is a lightweight background process runner for long-running or sch
   - [x] Linux
   - [x] MacOS
   - [x] Windows
+</pre>
 
 ## Integration with `just`
 
@@ -48,14 +54,16 @@ processing:
   done
   echo Processing finished
 
-# Play sounds from MQTT queue
+# Serve current directory on port 8000
 [group('autostart')]
-play:
-  #!/usr/bin/env bash
-  set -euo pipefail
-  mosquitto_sub -t room/speaker | while read sound; do
-    aplay sounds/$sound
-  done
+serve:
+  #!/usr/bin/env python3
+  import http.server
+  server_address = ('localhost', 8000)
+  Handler = http.server.SimpleHTTPRequestHandler
+  with http.server.HTTPServer(server_address, Handler) as httpd:
+      print("Server started at http://%s:%s" % server_address, flush=True)
+      httpd.serve_forever()
 ```
 
 Running a `just` recipe:
