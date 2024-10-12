@@ -1,8 +1,9 @@
 use clap::{CommandFactory, FromArgMatches, Subcommand};
 use log::error;
 use shell_compose::{
-    init_daemon_logger, start_ipc_listener, Cli, Dispatcher, ExecCommand, Message, SOCKET_NAME,
+    init_daemon_logger, start_ipc_listener, Cli, Dispatcher, ExecCommand, IpcStream, Message,
 };
+use std::fs::remove_file;
 
 fn run_server() {
     let cli = Cli::command();
@@ -20,8 +21,14 @@ fn run_server() {
         dispatcher.exec_command(cmd);
     }
 
+    let socket_name = IpcStream::user_socket_name();
+    // reclaim_name in interprocess::local_socket::ListenerOptions
+    // does not work, so we delete the socket first.
+    if IpcStream::check_connection().is_err() {
+        remove_file(&socket_name).ok();
+    }
     start_ipc_listener(
-        SOCKET_NAME,
+        &socket_name,
         move |mut stream| {
             let Ok(_connect) = stream.receive_message() else {
                 return;
