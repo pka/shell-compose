@@ -42,7 +42,7 @@ impl DispatcherProc {
     }
     fn wait(&self, max_ms: u64) -> Result<(), DispatcherError> {
         let mut wait_ms = 0;
-        while IpcStream::check_connection(SOCKET_NAME).is_err() {
+        while IpcStream::check_connection().is_err() {
             if wait_ms >= max_ms {
                 return Err(DispatcherError::ProcSpawnTimeoutError);
             }
@@ -68,7 +68,7 @@ fn cli() -> Result<(), DispatcherError> {
 
     init_cli_logger();
 
-    if IpcStream::check_connection(SOCKET_NAME).is_err() {
+    if IpcStream::check_connection().is_err() {
         if matches!(cli_command, Ok(CliCommand::Exit)) {
             // Background process already exited
             return Ok(());
@@ -78,7 +78,7 @@ fn cli() -> Result<(), DispatcherError> {
         dispatcher.wait(2000)?;
     }
 
-    let mut stream = IpcStream::connect("cli", SOCKET_NAME)?;
+    let mut stream = IpcStream::connect("cli")?;
     let msg: Message = exec_command
         .map(Into::into)
         .or_else(|_| cli_command.map(Into::into))?;
