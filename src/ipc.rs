@@ -1,4 +1,4 @@
-use crate::{get_user_id, Message};
+use crate::{get_user_name, Message};
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use interprocess::local_socket::{prelude::*, GenericFilePath, ListenerOptions};
 use log::debug;
@@ -68,7 +68,7 @@ pub fn start_ipc_listener<F: FnMut(IpcStream) + Send + 'static>(
         use interprocess::os::windows::{
             local_socket::ListenerOptionsExt, security_descriptor::SecurityDescriptor,
         };
-        options = options.security_descriptor(SecurityDescriptor::new());
+        options = options.security_descriptor(SecurityDescriptor::new().unwrap());
     }
     let listener = match options.create_sync() {
         Err(e) => return Err(IpcServerError::BindError(e)),
@@ -163,20 +163,20 @@ impl IpcStream {
         Ok(())
     }
     pub fn user_socket_name() -> String {
-        let uid = get_user_id().unwrap_or(u32::MAX);
-        IpcStream::socket_name(uid)
+        let user = get_user_name().unwrap_or("_".to_string());
+        IpcStream::socket_name(&user)
     }
     #[cfg(target_family = "unix")]
-    fn socket_name(uid: u32) -> String {
+    fn socket_name(user: &str) -> String {
         let tmpdir = std::env::var("TMPDIR").ok();
         format!(
-            "{}/shell-compose-{uid}.sock",
+            "{}/shell-compose-{user}.sock",
             tmpdir.as_deref().unwrap_or("/tmp")
         )
     }
     #[cfg(target_family = "windows")]
-    fn socket_name(uid: u32) -> String {
-        format!(r"\\.\pipe\shell-compose-{uid}")
+    fn socket_name(user: &str) -> String {
+        format!(r"\\.\pipe\shell-compose-{user}")
     }
     /// Check stream
     pub fn alive(&mut self) -> Result<(), IpcClientError> {
