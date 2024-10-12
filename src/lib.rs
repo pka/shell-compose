@@ -11,5 +11,3 @@ pub use display::*;
 pub use ipc::*;
 pub use justfile::*;
 pub use runner::*;
-
-pub const SOCKET_NAME: &str = "shell-compose.sock";

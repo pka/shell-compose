@@ -1,6 +1,6 @@
-use crate::Message;
+use crate::{get_user_name, Message};
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
-use interprocess::local_socket::{prelude::*, GenericNamespaced, ListenerOptions};
+use interprocess::local_socket::{prelude::*, GenericFilePath, ListenerOptions};
 use log::debug;
 use std::io;
 use std::io::prelude::*;
@@ -55,9 +55,22 @@ pub fn start_ipc_listener<F: FnMut(IpcStream) + Send + 'static>(
     on_connection_error: Option<fn(io::Error)>,
 ) -> Result<(), IpcServerError> {
     let name = socket
-        .to_ns_name::<GenericNamespaced>()
+        .to_fs_name::<GenericFilePath>()
         .map_err(IpcServerError::SocketNameError)?;
-    let listener = match ListenerOptions::new().name(name.clone()).create_sync() {
+    let mut options = ListenerOptions::new().name(name.clone());
+    #[cfg(target_family = "unix")]
+    {
+        use interprocess::os::unix::local_socket::ListenerOptionsExt;
+        options = options.mode(0o600);
+    }
+    #[cfg(target_family = "windows")]
+    {
+        use interprocess::os::windows::{
+            local_socket::ListenerOptionsExt, security_descriptor::SecurityDescriptor,
+        };
+        options = options.security_descriptor(SecurityDescriptor::new().unwrap());
+    }
+    let listener = match options.create_sync() {
         Err(e) => return Err(IpcServerError::BindError(e)),
         Ok(listener) => listener,
     };
@@ -84,7 +97,7 @@ pub fn start_ipc_listener<F: FnMut(IpcStream) + Send + 'static>(
 /// Connect to the socket and return the stream.
 fn ipc_client_connect(socket_name: &str) -> Result<LocalSocketStream, IpcClientError> {
     let name = socket_name
-        .to_ns_name::<GenericNamespaced>()
+        .to_fs_name::<GenericFilePath>()
         .map_err(IpcClientError::SocketNameError)?;
     LocalSocketStream::connect(name).map_err(IpcClientError::ConnectError)
 }
@@ -135,8 +148,9 @@ pub struct IpcStream {
 
 impl IpcStream {
     /// Connects to the socket and return the stream
-    pub fn connect(logname: &str, socket_name: &str) -> Result<Self, IpcClientError> {
-        let mut stream = ipc_client_connect(socket_name)?;
+    pub fn connect(logname: &str) -> Result<Self, IpcClientError> {
+        let socket_name = IpcStream::user_socket_name();
+        let mut stream = ipc_client_connect(&socket_name)?;
         stream.write_serde(&Message::Connect)?;
         Ok(IpcStream {
             logname: logname.to_string(),
@@ -144,9 +158,25 @@ impl IpcStream {
         })
     }
     /// Check socket connection
-    pub fn check_connection(socket_name: &str) -> Result<(), IpcClientError> {
-        IpcStream::connect("check_connection", socket_name)?;
+    pub fn check_connection() -> Result<(), IpcClientError> {
+        IpcStream::connect("check_connection")?;
         Ok(())
+    }
+    pub fn user_socket_name() -> String {
+        let user = get_user_name().unwrap_or("_".to_string());
+        IpcStream::socket_name(&user)
+    }
+    #[cfg(target_family = "unix")]
+    fn socket_name(user: &str) -> String {
+        let tmpdir = std::env::var("TMPDIR").ok();
+        format!(
+            "{}/shell-compose-{user}.sock",
+            tmpdir.as_deref().unwrap_or("/tmp")
+        )
+    }
+    #[cfg(target_family = "windows")]
+    fn socket_name(user: &str) -> String {
+        format!(r"\\.\pipe\shell-compose-{user}")
     }
     /// Check stream
     pub fn alive(&mut self) -> Result<(), IpcClientError> {

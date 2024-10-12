@@ -4,10 +4,10 @@ use log::info;
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
 use std::io::{BufRead, BufReader, Read};
-use std::process::{Child, Command, Stdio};
+use std::process::{self, Child, Command, Stdio};
 use std::sync::{mpsc, Arc, Mutex};
 use std::thread;
-use sysinfo::{ProcessRefreshKind, RefreshKind, System};
+use sysinfo::{ProcessRefreshKind, RefreshKind, System, UpdateKind, Users};
 
 /// Child process controller
 pub struct Runner {
@@ -271,4 +271,22 @@ fn output_listener<R: Read>(
         // Notify watcher
         channel.send(pid).unwrap();
     }
+}
+
+/// Current user
+pub fn get_user_name() -> Option<String> {
+    let system = System::new_with_specifics(
+        RefreshKind::new()
+            .with_processes(ProcessRefreshKind::new().with_user(UpdateKind::OnlyIfNotSet)),
+    );
+    let users = Users::new_with_refreshed_list();
+    let pid = process::id();
+    system
+        .process(sysinfo::Pid::from_u32(pid))
+        .and_then(|proc| {
+            proc.effective_user_id()
+                .or(proc.user_id())
+                .and_then(|uid| users.get_user_by_id(uid))
+                .map(|user| user.name().to_string())
+        })
 }
