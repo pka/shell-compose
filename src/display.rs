@@ -1,5 +1,6 @@
 use crate::{Job, JobInfo, ProcInfo, ProcStatus};
 use anstyle_query::{term_supports_ansi_color, truecolor};
+use bytesize::ByteSize;
 use chrono::Local;
 use comfy_table::{presets::UTF8_FULL, ContentArrangement, Table};
 use env_logger::{
@@ -139,7 +140,10 @@ pub fn proc_info_table(proc_infos: &[ProcInfo]) {
     let mut table = Table::new();
     table
         .load_preset(UTF8_FULL)
-        .set_header(vec!["Job", "PID", "Status", "Command", "Start", "End"])
+        .set_header(vec![
+            "Job", "PID", "Status", "Command", "Start", "End", "Cpu", "Mem", "Virt", "Write",
+            "Total", "Read", "Total",
+        ])
         .set_content_arrangement(ContentArrangement::DynamicFullWidth)
         .add_rows(proc_infos.iter().map(|info| {
             let status = match &info.state {
@@ -161,6 +165,13 @@ pub fn proc_info_table(proc_infos: &[ProcInfo]) {
                 clip_str(&command, 30),
                 format!("{}", info.start.format("%F %T")),
                 end,
+                format!("{:.1}%", info.cpu),
+                format!("{}", ByteSize(info.memory)),
+                format!("{}", ByteSize(info.virtual_memory)),
+                format!("{}/s", ByteSize(info.written_bytes)),
+                format!("{}", ByteSize(info.total_written_bytes)),
+                format!("{}/s", ByteSize(info.read_bytes)),
+                format!("{}", ByteSize(info.total_read_bytes)),
             ]
         }));
 

@@ -25,6 +25,24 @@ pub struct ProcInfo {
     pub state: ProcStatus,
     pub start: DateTime<Local>,
     pub end: Option<DateTime<Local>>,
+    /// Total CPU usage (in %)
+    /// See <https://docs.rs/sysinfo/latest/i686-pc-windows-msvc/sysinfo/struct.Process.html#method.cpu_usage>
+    pub cpu: f32,
+    /// Memory usage (in bytes).
+    /// See <https://docs.rs/sysinfo/latest/i686-pc-windows-msvc/sysinfo/struct.Process.html#method.memory>
+    pub memory: u64,
+    /// Virtual memory usage (in bytes).
+    /// <https://docs.rs/sysinfo/latest/i686-pc-windows-msvc/sysinfo/struct.Process.html#method.virtual_memory>
+    pub virtual_memory: u64,
+    /// Total number of written bytes.
+    /// <https://docs.rs/sysinfo/latest/i686-pc-windows-msvc/sysinfo/struct.Process.html#method.disk_usage>
+    pub total_written_bytes: u64,
+    /// Written bytes per second.
+    pub written_bytes: u64,
+    /// Total number of read bytes.
+    pub total_read_bytes: u64,
+    /// Read bytes per second.
+    pub read_bytes: u64,
 }
 
 impl ProcInfo {
@@ -151,6 +169,13 @@ impl Runner {
             state: ProcStatus::Spawned,
             start: Local::now(),
             end: None,
+            cpu: 0.0,
+            memory: 0,
+            virtual_memory: 0,
+            total_written_bytes: 0,
+            written_bytes: 0,
+            total_read_bytes: 0,
+            read_bytes: 0,
         };
 
         let child_proc = Runner {
@@ -160,7 +185,7 @@ impl Runner {
         };
         Ok(child_proc)
     }
-    pub fn update_proc_info(&mut self) -> &ProcInfo {
+    pub fn update_proc_state(&mut self) -> &ProcInfo {
         if self.info.end.is_none() {
             self.info.state = match self.proc.try_wait() {
                 Ok(Some(status)) if status.success() => ProcStatus::ExitOk,
@@ -172,7 +197,7 @@ impl Runner {
         &self.info
     }
     pub fn is_running(&mut self) -> bool {
-        !self.update_proc_info().state.exited()
+        !self.update_proc_state().state.exited()
     }
     pub fn terminate(&mut self) -> Result<(), std::io::Error> {
         if self.info.program() == "just" {

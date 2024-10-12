@@ -11,6 +11,7 @@ use std::str::FromStr;
 use std::sync::{mpsc, Arc, Mutex};
 use std::thread;
 use std::time::Duration;
+use sysinfo::{ProcessRefreshKind, ProcessesToUpdate, RefreshKind, System};
 use thiserror::Error;
 
 pub type JobId = u32;
@@ -22,6 +23,7 @@ pub struct Dispatcher<'a> {
     jobs: BTreeMap<JobId, JobInfo>,
     last_job_id: JobId,
     cronjobs: HashMap<JobId, job_scheduler::Uuid>,
+    system: System,
     /// Sender channel for Runner threads
     channel: mpsc::Sender<Pid>,
 }
@@ -80,12 +82,17 @@ impl Dispatcher<'_> {
         let procs_spawn = procs.clone();
         let _watcher = thread::spawn(move || child_watcher(procs_spawn, send_spawn, recv));
 
+        let system = System::new_with_specifics(
+            RefreshKind::new().with_processes(ProcessRefreshKind::new()),
+        );
+
         Dispatcher {
             procs,
             scheduler,
             jobs: BTreeMap::new(),
             last_job_id: 0,
             cronjobs: HashMap::new(),
+            system,
             channel: send,
         }
     }
@@ -242,8 +249,81 @@ impl Dispatcher<'_> {
     }
     /// Return info about running and finished processes
     fn ps(&mut self, stream: &mut IpcStream) -> Result<(), DispatcherError> {
+        // Update system info
+        // For accurate CPU usage, a process needs to be refreshed twice
+        // https://docs.rs/sysinfo/latest/i686-pc-windows-msvc/sysinfo/struct.Process.html#method.cpu_usage
+        let ts = Local::now();
+        self.system.refresh_processes_specifics(
+            ProcessesToUpdate::All,
+            true,
+            ProcessRefreshKind::new().with_cpu(),
+        );
+        // Collect pids and child pids
+        let pids: Vec<sysinfo::Pid> = self
+            .procs
+            .lock()
+            .expect("lock")
+            .iter()
+            .flat_map(|proc| {
+                let parent_pid = sysinfo::Pid::from(proc.info.pid as usize);
+                self.system
+                    .processes()
+                    .iter()
+                    .filter(move |(_pid, process)| {
+                        process.parent().unwrap_or(0.into()) == parent_pid
+                    })
+                    .map(|(pid, _process)| *pid)
+                    .chain([parent_pid])
+            })
+            .collect();
+        std::thread::sleep(sysinfo::MINIMUM_CPU_UPDATE_INTERVAL); // 200ms
+        let duration = (Local::now() - ts).num_milliseconds();
+        fn per_second(value: u64, ms: i64) -> u64 {
+            (value as f64 * 1000.0 / ms as f64) as u64
+        }
+        self.system.refresh_processes_specifics(
+            ProcessesToUpdate::Some(&pids),
+            true,
+            ProcessRefreshKind::new()
+                .with_cpu()
+                .with_disk_usage()
+                .with_memory(),
+        );
+
         for child in &mut self.procs.lock().expect("lock").iter_mut().rev() {
-            let info = child.update_proc_info();
+            let parent_pid = sysinfo::Pid::from(child.info.pid as usize);
+            // CPU usage has to be measured from just child processs
+            // For tasks spawning child processes, we should consider the whole process subtree!
+            let main_pid = if child.info.program() == "just" {
+                self.system
+                    .processes()
+                    .iter()
+                    .find(|(_pid, process)| {
+                        process.parent().unwrap_or(0.into()) == parent_pid
+                            && process.name() != "ctrl-c"
+                    })
+                    .map(|(pid, _process)| *pid)
+                    .unwrap_or(parent_pid)
+            } else {
+                parent_pid
+            };
+            if let Some(process) = self.system.process(main_pid) {
+                child.info.cpu = process.cpu_usage();
+                child.info.memory = process.memory();
+                child.info.virtual_memory = process.virtual_memory();
+                let disk = process.disk_usage();
+                child.info.total_written_bytes = disk.total_written_bytes;
+                child.info.written_bytes = per_second(disk.written_bytes, duration);
+                child.info.total_read_bytes = disk.total_read_bytes;
+                child.info.read_bytes = per_second(disk.read_bytes, duration);
+            } else {
+                child.info.cpu = 0.0;
+                child.info.memory = 0;
+                child.info.virtual_memory = 0;
+                child.info.written_bytes = 0;
+                child.info.read_bytes = 0;
+            }
+            let info = child.update_proc_state();
             if stream.send_message(&Message::PsInfo(info.clone())).is_err() {
                 info!("Aborting ps command (stream error)");
                 break;
@@ -358,7 +438,7 @@ fn child_watcher(
         {
             // https://doc.rust-lang.org/std/process/struct.Child.html#warning
             let exit_code = child.proc.wait().ok().and_then(|st| st.code());
-            let _ = child.update_proc_info();
+            let _ = child.update_proc_state();
             child.info.end = Some(ts);
             if let Some(code) = exit_code {
                 info!(target: &format!("{pid}"), "Process terminated with exit code {code}");
