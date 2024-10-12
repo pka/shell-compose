@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.2 - 2024-10-12
+
+- Fix background process termination with Ctrl-C on Windows
+
 ## 0.2.1 - 2024-10-10
 
 - Fix log output without filter
