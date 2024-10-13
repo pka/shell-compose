@@ -290,6 +290,7 @@ impl Dispatcher<'_> {
                 .with_memory(),
         );
 
+        let mut proc_infos = Vec::new();
         for child in &mut self.procs.lock().expect("lock").iter_mut().rev() {
             let parent_pid = sysinfo::Pid::from(child.info.pid as usize);
             // CPU usage has to be measured from just child processs
@@ -324,25 +325,21 @@ impl Dispatcher<'_> {
                 child.info.read_bytes = 0;
             }
             let info = child.update_proc_state();
-            if stream.send_message(&Message::PsInfo(info.clone())).is_err() {
-                info!("Aborting ps command (stream error)");
-                break;
-            }
+            proc_infos.push(info.clone());
         }
+        stream.send_message(&Message::PsInfo(proc_infos))?;
         Ok(())
     }
     /// Return info about jobs
     fn jobs(&mut self, stream: &mut IpcStream) -> Result<(), DispatcherError> {
+        let mut job_infos = Vec::new();
         for (id, info) in self.jobs.iter().rev() {
-            let job = Job {
+            job_infos.push(Job {
                 id: *id,
                 info: info.clone(),
-            };
-            if stream.send_message(&Message::JobInfo(job)).is_err() {
-                info!("Aborting job command (stream error)");
-                break;
-            }
+            });
         }
+        stream.send_message(&Message::JobInfo(job_infos))?;
         Ok(())
     }
     /// Return log lines

@@ -87,8 +87,6 @@ fn cli() -> Result<(), DispatcherError> {
         return Ok(());
     }
     let formatter = Formatter::default();
-    let mut proc_infos = Vec::new();
-    let mut job_infos = Vec::new();
     loop {
         let response = stream.receive_message();
         match response {
@@ -97,12 +95,6 @@ fn cli() -> Result<(), DispatcherError> {
                 match msg {
                     Message::ExecCommand(_) | Message::CliCommand(CliCommand::Stop { .. }) => {
                         info!(target: "dispatcher", "Command successful");
-                    }
-                    Message::CliCommand(CliCommand::Ps) => {
-                        proc_info_table(&proc_infos);
-                    }
-                    Message::CliCommand(CliCommand::Jobs) => {
-                        job_info_table(&job_infos);
                     }
                     _ => {}
                 }
@@ -124,11 +116,13 @@ fn cli() -> Result<(), DispatcherError> {
                 error!(target: "dispatcher", "{msg} - Check logs for more information");
                 return Ok(());
             }
-            Ok(Message::PsInfo(info)) => {
-                proc_infos.push(info);
+            Ok(Message::PsInfo(proc_infos)) => {
+                proc_info_table(&proc_infos);
+                return Ok(());
             }
-            Ok(Message::JobInfo(info)) => {
-                job_infos.push(info);
+            Ok(Message::JobInfo(job_infos)) => {
+                job_info_table(&job_infos);
+                return Ok(());
             }
             Ok(Message::LogLine(log_line)) => {
                 log_line.log(&formatter);

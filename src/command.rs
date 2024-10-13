@@ -69,8 +69,8 @@ pub enum Message {
     ExecCommand(ExecCommand),
     CliCommand(CliCommand),
     // cli <- Listener
-    PsInfo(ProcInfo),
-    JobInfo(Job),
+    PsInfo(Vec<ProcInfo>),
+    JobInfo(Vec<Job>),
     LogLine(LogLine),
     Ok,
     JobsStarted(Vec<JobId>),
