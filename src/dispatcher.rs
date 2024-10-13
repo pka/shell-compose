@@ -18,21 +18,51 @@ pub type JobId = u32;
 pub type Pid = u32;
 
 pub struct Dispatcher<'a> {
-    procs: Arc<Mutex<Vec<Runner>>>,
-    scheduler: Arc<Mutex<JobScheduler<'a>>>,
     jobs: BTreeMap<JobId, JobInfo>,
     last_job_id: JobId,
     cronjobs: HashMap<JobId, job_scheduler::Uuid>,
+    procs: Arc<Mutex<Vec<Runner>>>,
+    scheduler: Arc<Mutex<JobScheduler<'a>>>,
     system: System,
     /// Sender channel for Runner threads
     channel: mpsc::Sender<Pid>,
 }
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
-pub enum JobInfo {
-    Shell(Vec<String>),
+pub struct JobInfo {
+    pub job_type: JobType,
+    pub args: Vec<String>,
+    pub entrypoint: Option<String>,
+    pub restart: RestartInfo,
+    // stats: #Runs, #Success, #Restarts
+}
+
+#[derive(Clone, Serialize, Deserialize, Debug)]
+pub enum JobType {
+    Shell,
     Service(String),
-    Cron(String, Vec<String>),
+    Cron(String),
+}
+
+#[derive(Clone, Serialize, Deserialize, Debug)]
+pub struct RestartInfo {
+    pub policy: Restart,
+    /// Waiting time before restart in ms
+    pub wait_time: u64,
+}
+
+/// Restart policy
+#[derive(Clone, Serialize, Deserialize, Debug)]
+pub enum Restart {
+    Always,
+    OnFailure,
+    Never,
+}
+
+struct JobSpawnInfo<'a> {
+    job_id: JobId,
+    args: &'a [String],
+    restart_info: RestartInfo,
 }
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
@@ -69,6 +99,48 @@ pub enum DispatcherError {
     CronError(#[from] cron::error::Error),
 }
 
+impl Default for RestartInfo {
+    fn default() -> Self {
+        RestartInfo {
+            policy: Restart::OnFailure,
+            wait_time: 50,
+        }
+    }
+}
+
+impl JobInfo {
+    pub fn new_shell_job(args: Vec<String>) -> Self {
+        JobInfo {
+            job_type: JobType::Shell,
+            args,
+            entrypoint: None,
+            restart: RestartInfo {
+                policy: Restart::Never,
+                ..Default::default()
+            },
+        }
+    }
+    pub fn new_cron_job(cron: String, args: Vec<String>) -> Self {
+        JobInfo {
+            job_type: JobType::Cron(cron),
+            args,
+            entrypoint: None,
+            restart: RestartInfo {
+                policy: Restart::Never,
+                ..Default::default()
+            },
+        }
+    }
+    pub fn new_service(service: String) -> Self {
+        JobInfo {
+            job_type: JobType::Service(service.clone()),
+            args: vec!["just".to_string(), service], // TODO: exclude entrypoint
+            entrypoint: Some("just".to_string()),
+            restart: RestartInfo::default(),
+        }
+    }
+}
+
 impl Dispatcher<'_> {
     pub fn create() -> Dispatcher<'static> {
         let procs = Arc::new(Mutex::new(Vec::new()));
@@ -87,11 +159,11 @@ impl Dispatcher<'_> {
         );
 
         Dispatcher {
-            procs,
-            scheduler,
             jobs: BTreeMap::new(),
             last_job_id: 0,
             cronjobs: HashMap::new(),
+            procs,
+            scheduler,
             system,
             channel: send,
         }
@@ -132,19 +204,33 @@ impl Dispatcher<'_> {
         self.jobs.insert(self.last_job_id, job);
         self.last_job_id
     }
+    fn spawn_info(&self, job_id: JobId) -> Result<JobSpawnInfo<'_>, DispatcherError> {
+        let job = self
+            .jobs
+            .get(&job_id)
+            .ok_or(DispatcherError::JobNotFoundError(job_id))?;
+        Ok(JobSpawnInfo {
+            job_id,
+            args: &job.args,
+            restart_info: job.restart.clone(),
+        })
+    }
+    /// Find service job
     fn find_job(&self, service: &str) -> Option<JobId> {
         self.jobs
             .iter()
-            .find(|(_id, info)| matches!(info, JobInfo::Service(name) if *name == service))
+            .find(|(_id, info)| matches!(&info.job_type, JobType::Service(name) if name == service))
             .map(|(id, _info)| *id)
     }
     fn run(&mut self, args: &[String]) -> Result<Vec<JobId>, DispatcherError> {
-        let job_id = self.add_job(JobInfo::Shell(args.to_vec()));
-        self.spawn_job(job_id, args)?;
+        let job_info = JobInfo::new_shell_job(args.to_vec());
+        let job_id = self.add_job(job_info);
+        self.spawn_job(job_id)?;
         Ok(vec![job_id])
     }
-    fn spawn_job(&mut self, job_id: JobId, args: &[String]) -> Result<(), DispatcherError> {
-        let child = Runner::spawn(job_id, args, self.channel.clone())?;
+    fn spawn_job(&mut self, job_id: JobId) -> Result<(), DispatcherError> {
+        let job = self.spawn_info(job_id)?;
+        let child = Runner::spawn(job.job_id, job.args, job.restart_info, self.channel.clone())?;
         self.procs.lock().expect("lock").push(child);
         // Wait for startup failure
         thread::sleep(Duration::from_millis(10));
@@ -171,6 +257,7 @@ impl Dispatcher<'_> {
             .filter(|child| child.info.job_id == job_id)
         {
             if child.is_running() {
+                child.user_terminated = true;
                 child.terminate().map_err(DispatcherError::KillError)?;
             }
         }
@@ -182,7 +269,9 @@ impl Dispatcher<'_> {
     }
     /// Add cron job
     fn run_at(&mut self, cron: &str, args: &[String]) -> Result<Vec<JobId>, DispatcherError> {
-        let job_id = self.add_job(JobInfo::Cron(cron.to_string(), args.to_vec()));
+        let job_info = JobInfo::new_cron_job(cron.to_string(), args.to_vec());
+        let restart_info = job_info.restart.clone();
+        let job_id = self.add_job(job_info);
         let job_args = args.to_vec();
         let procs = self.procs.clone();
         let channel = self.channel.clone();
@@ -191,7 +280,8 @@ impl Dispatcher<'_> {
             .lock()
             .expect("lock")
             .add(job_scheduler::Job::new(cron.parse()?, move || {
-                let child = Runner::spawn(job_id, &job_args, channel.clone()).unwrap();
+                let child = Runner::spawn(job_id, &job_args, restart_info.clone(), channel.clone())
+                    .unwrap();
                 procs.lock().expect("lock").push(child);
             }));
         self.cronjobs.insert(job_id, uuid);
@@ -202,7 +292,7 @@ impl Dispatcher<'_> {
         // Find existing job or add new
         let job_id = self
             .find_job(service)
-            .unwrap_or_else(|| self.add_job(JobInfo::Service(service.to_string())));
+            .unwrap_or_else(|| self.add_job(JobInfo::new_service(service.to_string())));
         // Check for existing process for this service
         let running = self
             .procs
@@ -213,10 +303,7 @@ impl Dispatcher<'_> {
         if running {
             Ok(vec![])
         } else {
-            self.spawn_job(
-                job_id,
-                vec!["just".to_string(), service.to_string()].as_slice(),
-            )?;
+            self.spawn_job(job_id)?;
             Ok(vec![job_id])
         }
     }
@@ -239,7 +326,7 @@ impl Dispatcher<'_> {
         for service in recipes {
             self.jobs
                 .iter()
-                .filter(|(_id, info)| matches!(info, JobInfo::Service(name) if *name == service))
+                .filter(|(_id, info)| matches!(&info.job_type, JobType::Service(name) if *name == service))
                 .for_each(|(id, _info)| job_ids.push(*id));
         }
         for job_id in job_ids {
@@ -442,17 +529,28 @@ fn child_watcher(
             } else {
                 info!(target: &format!("{pid}"), "Process terminated");
             }
-            // just exits with code 1 when child process is terminated (130 when ctrl-c handler exits)
-            let mincode = if child.info.program() == "just" { 1 } else { 0 };
-            if matches!(child.info.state, ProcStatus::ExitErr(code) if code > mincode) {
-                respawn_child = Some(child.info.clone());
+            let respawn = !child.user_terminated
+                && match child.restart_info.policy {
+                    Restart::Always => true,
+                    Restart::OnFailure => {
+                        matches!(child.info.state, ProcStatus::ExitErr(code) if code > 0)
+                    }
+                    Restart::Never => false,
+                };
+            if respawn {
+                respawn_child = Some((child.info.clone(), child.restart_info.clone()));
             }
         } else {
             info!(target: &format!("{pid}"), "(Unknown) process terminated");
         }
-        if let Some(child_info) = respawn_child {
-            thread::sleep(Duration::from_millis(50));
-            let result = Runner::spawn(child_info.job_id, &child_info.cmd_args, sender.clone());
+        if let Some((child_info, restart_info)) = respawn_child {
+            thread::sleep(Duration::from_millis(restart_info.wait_time));
+            let result = Runner::spawn(
+                child_info.job_id,
+                &child_info.cmd_args,
+                restart_info,
+                sender.clone(),
+            );
             match result {
                 Ok(child) => procs.lock().expect("lock").push(child),
                 Err(e) => error!("Error trying to respawn failed process: {e}"),

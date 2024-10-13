@@ -1,4 +1,4 @@
-use crate::{Job, JobInfo, ProcInfo, ProcStatus};
+use crate::{Job, JobType, ProcInfo, ProcStatus};
 use anstyle_query::{term_supports_ansi_color, truecolor};
 use bytesize::ByteSize;
 use chrono::Local;
@@ -178,7 +178,7 @@ pub fn proc_info_table(proc_infos: &[ProcInfo]) {
     println!("{table}");
 }
 
-pub fn job_info_table(job_infos: &[Job]) {
+pub fn job_info_table(jobs: &[Job]) {
     const EMPTY: String = String::new();
 
     let mut table = Table::new();
@@ -186,22 +186,18 @@ pub fn job_info_table(job_infos: &[Job]) {
         .load_preset(UTF8_FULL)
         .set_header(vec!["Job", "Command", "At"])
         .set_content_arrangement(ContentArrangement::DynamicFullWidth)
-        .add_rows(job_infos.iter().map(|jobinfo| {
-            let command = match &jobinfo.info {
-                JobInfo::Shell(args) => args.join(" "),
-                JobInfo::Service(s) => s.to_string(),
-                JobInfo::Cron(_, args) => args.join(" "),
+        .add_rows(jobs.iter().map(|job| {
+            let command = match &job.info.job_type {
+                JobType::Shell => &job.info.args.join(" "),
+                JobType::Service(s) => s,
+                JobType::Cron(_) => &job.info.args.join(" "),
             };
-            let at = if let JobInfo::Cron(at, _) = &jobinfo.info {
+            let at = if let JobType::Cron(at) = &job.info.job_type {
                 at
             } else {
                 &EMPTY
             };
-            vec![
-                format!("{}", jobinfo.id),
-                clip_str(&command, 30),
-                at.to_string(),
-            ]
+            vec![format!("{}", job.id), clip_str(command, 30), at.to_string()]
         }));
 
     println!("{table}");

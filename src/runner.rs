@@ -1,4 +1,4 @@
-use crate::{DispatcherError, Formatter, JobId, Pid};
+use crate::{DispatcherError, Formatter, JobId, Pid, RestartInfo};
 use chrono::{DateTime, Local};
 use log::info;
 use serde::{Deserialize, Serialize};
@@ -13,6 +13,9 @@ use sysinfo::{ProcessRefreshKind, RefreshKind, System, UpdateKind, Users};
 pub struct Runner {
     pub proc: Child,
     pub info: ProcInfo,
+    pub restart_info: RestartInfo,
+    /// Flag set in stop/down command to prevent restart
+    pub user_terminated: bool,
     pub output: Arc<Mutex<OutputBuffer>>,
 }
 
@@ -121,6 +124,7 @@ impl Runner {
     pub fn spawn(
         job_id: JobId,
         args: &[String],
+        restart_info: RestartInfo,
         channel: mpsc::Sender<Pid>,
     ) -> Result<Self, DispatcherError> {
         let cmd_args = args.to_vec();
@@ -181,6 +185,8 @@ impl Runner {
         let child_proc = Runner {
             proc: child,
             info,
+            restart_info,
+            user_terminated: false,
             output,
         };
         Ok(child_proc)
