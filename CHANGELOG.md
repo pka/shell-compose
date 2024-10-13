@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.3.0 - 2024-10-13
+
+- Collect system stats for running processes
+- Create a background service instance per user
+- Restrict access permissions for communication socket
+- Initial work for Windows Security Context
+- Differentate restart policies for job types
+- Fix restart of failed services
+- LOC: 1404
+
 ## 0.2.2 - 2024-10-12
 
 - Fix background process termination with Ctrl-C on Windows

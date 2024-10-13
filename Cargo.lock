@@ -486,7 +486,7 @@ dependencies = [
 
 [[package]]
 name = "shell-compose"
-version = "0.2.2"
+version = "0.3.0"
 dependencies = [
  "anstyle-query",
  "bincode",
