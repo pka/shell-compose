@@ -24,7 +24,7 @@ Shell Compose is a lightweight background process runner for long-running or sch
   - [ ] Trigger execution by calling HTTP endpoint
 * Observability
   - [x] Show process status
-  - [ ] Show process resource usage
+  - [x] Show process resource usage
   - [x] Show logs of all running jobs
   - [x] Show logs of selected jobs
   - [ ] Metrics endpoint
