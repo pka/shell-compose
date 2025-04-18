@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.1 - 2025-04-18
+
+- Create process groups
+- Emit cli error as log message
+- LOC: 1409
+
 ## 0.3.0 - 2024-10-13
 
 - Collect system stats for running processes
