@@ -1,17 +1,18 @@
 use crate::{DispatcherError, Formatter, JobId, Pid, RestartInfo};
 use chrono::{DateTime, Local};
+use command_group::{CommandGroup, GroupChild};
 use log::info;
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
 use std::io::{BufRead, BufReader, Read};
-use std::process::{self, Child, Command, Stdio};
+use std::process::{self, Command, Stdio};
 use std::sync::{mpsc, Arc, Mutex};
 use std::thread;
 use sysinfo::{ProcessRefreshKind, RefreshKind, System, UpdateKind, Users};
 
 /// Child process controller
 pub struct Runner {
-    pub proc: Child,
+    pub proc: GroupChild,
     pub info: ProcInfo,
     pub restart_info: RestartInfo,
     /// Flag set in stop/down command to prevent restart
@@ -139,7 +140,7 @@ impl Runner {
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
-            .spawn()
+            .group_spawn()
             .map_err(DispatcherError::ProcSpawnError)?;
         let pid = child.id();
 
@@ -148,7 +149,7 @@ impl Runner {
         let output = Arc::new(Mutex::new(OutputBuffer::new(Some(max_len))));
 
         let buffer = output.clone();
-        let stdout = child.stdout.take().unwrap();
+        let stdout = child.inner().stdout.take().unwrap();
         let _stdout_handle = thread::spawn(move || {
             output_listener(
                 BufReader::new(stdout),
@@ -161,7 +162,7 @@ impl Runner {
         });
 
         let buffer = output.clone();
-        let stderr = child.stderr.take().unwrap();
+        let stderr = child.inner().stderr.take().unwrap();
         let _stderr_handle = thread::spawn(move || {
             output_listener(BufReader::new(stderr), job_id, pid, true, buffer, None)
         });
@@ -206,26 +207,8 @@ impl Runner {
         !self.update_proc_state().state.exited()
     }
     pub fn terminate(&mut self) -> Result<(), std::io::Error> {
-        if self.info.program() == "just" {
-            // just does not propagate signals, so we have to kill its child process
-            let just_pid = self.proc.id() as usize;
-            let system = System::new_with_specifics(
-                RefreshKind::new().with_processes(ProcessRefreshKind::new()),
-            );
-            if let Some((pid, process)) = system.processes().iter().find(|(_pid, process)| {
-                process.parent().unwrap_or(0.into()) == just_pid.into()
-                    && process.name() != "ctrl-c"
-            }) {
-                info!("Terminating process {pid} (parent process {just_pid})");
-                process.kill(); // process.kill_with(Signal::Term)
-            }
-            // In an interactive terminal session, sending Ctrl-C terminates the running process.
-            // let mut stdin = self.proc.stdin.take().unwrap();
-            // stdin.write_all(&[3])?;
-        } else {
-            info!("Terminating process {}", self.proc.id());
-            self.proc.kill()?;
-        }
+        info!("Terminating process {}", self.proc.id());
+        self.proc.kill()?;
         Ok(())
     }
 }
