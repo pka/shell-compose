@@ -20,15 +20,22 @@ bytesize = "1.3.0"
 chrono = { version = "0.4.38", features = ["serde"] }
 clap = { version = "4.0.0", features = ["derive", "env", "wrap_help"] }
 comfy-table = { version = "7.1.1", default-features = false }
-cron = "0.12.1"
-env_logger = { version = "0.11.5", default-features = false, features = ["humantime", "auto-color", "color"] }
+cron = "0.15.0"
+env_logger = { version = "0.11.5", default-features = false, features = [
+    "humantime",
+    "auto-color",
+    "color",
+] }
 interprocess = "2.2.1"
 job_scheduler_ng = "2.0.5"
 log = "0.4.22"
 serde = { version = "1.0.210", features = ["derive"] }
 serde_json = "1.0.128"
-sysinfo = { version = "0.32.0", default-features = false, features = ["system", "user"] }
-thiserror = "1.0.63"
+sysinfo = { version = "0.32.0", default-features = false, features = [
+    "system",
+    "user",
+] }
+thiserror = "2.0.12"
 
 [[bin]]
 path = "src/bin/shell_compose.rs"
