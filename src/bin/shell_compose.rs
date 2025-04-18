@@ -1,13 +1,14 @@
 use clap::{CommandFactory, FromArgMatches, Subcommand};
 use log::{error, info};
 use shell_compose::*;
-use std::process::{self, Stdio};
+use std::process::{self, Child, Stdio};
 use std::time::Duration;
 use std::{env, thread};
 
-struct DispatcherProc;
+struct DispatcherProc(Child);
 
 impl DispatcherProc {
+    /// Spawn background process
     fn spawn() -> DispatcherProc {
         let mut exe = env::current_exe().unwrap();
         exe.set_file_name(
@@ -37,9 +38,10 @@ impl DispatcherProc {
         } else {
             proc.stdout(Stdio::null()).stderr(Stdio::null())
         };
-        proc.spawn().unwrap();
-        DispatcherProc
+        let child = proc.spawn().unwrap();
+        DispatcherProc(child)
     }
+    /// wait until communication with background process ready
     fn wait(&self, max_ms: u64) -> Result<(), DispatcherError> {
         let mut wait_ms = 0;
         while IpcStream::check_connection().is_err() {
@@ -49,6 +51,12 @@ impl DispatcherProc {
             thread::sleep(Duration::from_millis(50));
             wait_ms += 50;
         }
+        Ok(())
+    }
+    /// kill background process
+    fn kill(mut self) -> Result<(), DispatcherError> {
+        self.0.kill().map_err(DispatcherError::KillError)?;
+        self.0.wait().map_err(DispatcherError::KillError)?;
         Ok(())
     }
 }
@@ -75,7 +83,10 @@ fn cli() -> Result<(), DispatcherError> {
         }
         info!(target: "dispatcher", "Starting background process");
         let dispatcher = DispatcherProc::spawn();
-        dispatcher.wait(2000)?;
+        if let Err(e) = dispatcher.wait(2000) {
+            dispatcher.kill()?;
+            return Err(e);
+        }
     }
 
     let mut stream = IpcStream::connect("cli")?;
