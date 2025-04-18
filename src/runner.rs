@@ -140,6 +140,7 @@ impl Runner {
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
+            // spawn process group (https://biriukov.dev/docs/fd-pipe-session-terminal/3-process-groups-jobs-and-sessions/)
             .group_spawn()
             .map_err(DispatcherError::ProcSpawnError)?;
         let pid = child.id();

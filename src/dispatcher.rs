@@ -75,10 +75,12 @@ pub struct Job {
 pub enum DispatcherError {
     #[error(transparent)]
     CliArgsError(#[from] clap::Error),
+    #[error("Failed to start `shell-composed`: {0}")]
+    DispatcherSpawnError(std::io::Error),
+    #[error("Connection to `shell-composed` failed")]
+    DispatcherSpawnTimeoutError,
     #[error("Failed to spawn process: {0}")]
     ProcSpawnError(std::io::Error),
-    #[error("Failed to spawn process (timeout)")]
-    ProcSpawnTimeoutError,
     #[error("Failed to terminate child process: {0}")]
     KillError(std::io::Error),
     #[error("Job {0} not found")]

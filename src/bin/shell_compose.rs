@@ -1,7 +1,7 @@
 use clap::{CommandFactory, FromArgMatches, Subcommand};
 use log::{error, info};
 use shell_compose::*;
-use std::process::{self, Child, Stdio};
+use std::process::{self, Child, ExitCode, Stdio};
 use std::time::Duration;
 use std::{env, thread};
 
@@ -9,7 +9,7 @@ struct DispatcherProc(Child);
 
 impl DispatcherProc {
     /// Spawn background process
-    fn spawn() -> DispatcherProc {
+    fn spawn() -> Result<DispatcherProc, DispatcherError> {
         let mut exe = env::current_exe().unwrap();
         exe.set_file_name(
             exe.file_name()
@@ -38,15 +38,17 @@ impl DispatcherProc {
         } else {
             proc.stdout(Stdio::null()).stderr(Stdio::null())
         };
-        let child = proc.spawn().unwrap();
-        DispatcherProc(child)
+        let child = proc
+            .spawn()
+            .map_err(DispatcherError::DispatcherSpawnError)?;
+        Ok(DispatcherProc(child))
     }
     /// wait until communication with background process ready
     fn wait(&self, max_ms: u64) -> Result<(), DispatcherError> {
         let mut wait_ms = 0;
         while IpcStream::check_connection().is_err() {
             if wait_ms >= max_ms {
-                return Err(DispatcherError::ProcSpawnTimeoutError);
+                return Err(DispatcherError::DispatcherSpawnTimeoutError);
             }
             thread::sleep(Duration::from_millis(50));
             wait_ms += 50;
@@ -82,7 +84,7 @@ fn cli() -> Result<(), DispatcherError> {
             return Ok(());
         }
         info!(target: "dispatcher", "Starting background process");
-        let dispatcher = DispatcherProc::spawn();
+        let dispatcher = DispatcherProc::spawn()?;
         if let Err(e) = dispatcher.wait(2000) {
             dispatcher.kill()?;
             return Err(e);
@@ -144,6 +146,11 @@ fn cli() -> Result<(), DispatcherError> {
     }
 }
 
-fn main() -> Result<(), DispatcherError> {
-    cli()
+fn main() -> ExitCode {
+    if let Err(e) = cli() {
+        error!(target: "dispatcher", "{e}");
+        ExitCode::FAILURE
+    } else {
+        ExitCode::SUCCESS
+    }
 }
