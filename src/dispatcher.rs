@@ -34,7 +34,6 @@ pub struct JobInfo {
     pub args: Vec<String>,
     pub entrypoint: Option<String>,
     pub restart: RestartInfo,
-    // stats: #Runs, #Success, #Restarts
 }
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
@@ -44,25 +43,21 @@ pub enum JobType {
     Cron(String),
 }
 
-#[derive(Clone, Serialize, Deserialize, Debug)]
-pub struct RestartInfo {
-    pub policy: Restart,
-    /// Waiting time before restart in ms
-    pub wait_time: u64,
-}
-
 /// Restart policy
 #[derive(Clone, Serialize, Deserialize, Debug)]
-pub enum Restart {
+pub enum RestartPolicy {
     Always,
     OnFailure,
     Never,
 }
 
-struct JobSpawnInfo<'a> {
-    job_id: JobId,
-    args: &'a [String],
-    restart_info: RestartInfo,
+/// Runtime infos of job
+#[derive(Clone, Serialize, Deserialize, Debug)]
+pub struct RestartInfo {
+    pub policy: RestartPolicy,
+    /// Waiting time before restart in ms
+    pub wait_time: u64,
+    // stats: #Runs, #Success, #Restarts
 }
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
@@ -104,7 +99,7 @@ pub enum DispatcherError {
 impl Default for RestartInfo {
     fn default() -> Self {
         RestartInfo {
-            policy: Restart::OnFailure,
+            policy: RestartPolicy::OnFailure,
             wait_time: 50,
         }
     }
@@ -117,7 +112,7 @@ impl JobInfo {
             args,
             entrypoint: None,
             restart: RestartInfo {
-                policy: Restart::Never,
+                policy: RestartPolicy::Never,
                 ..Default::default()
             },
         }
@@ -128,7 +123,7 @@ impl JobInfo {
             args,
             entrypoint: None,
             restart: RestartInfo {
-                policy: Restart::Never,
+                policy: RestartPolicy::Never,
                 ..Default::default()
             },
         }
@@ -206,17 +201,6 @@ impl Dispatcher<'_> {
         self.jobs.insert(self.last_job_id, job);
         self.last_job_id
     }
-    fn spawn_info(&self, job_id: JobId) -> Result<JobSpawnInfo<'_>, DispatcherError> {
-        let job = self
-            .jobs
-            .get(&job_id)
-            .ok_or(DispatcherError::JobNotFoundError(job_id))?;
-        Ok(JobSpawnInfo {
-            job_id,
-            args: &job.args,
-            restart_info: job.restart.clone(),
-        })
-    }
     /// Find service job
     fn find_job(&self, service: &str) -> Option<JobId> {
         self.jobs
@@ -231,8 +215,11 @@ impl Dispatcher<'_> {
         Ok(vec![job_id])
     }
     fn spawn_job(&mut self, job_id: JobId) -> Result<(), DispatcherError> {
-        let job = self.spawn_info(job_id)?;
-        let child = Runner::spawn(job.job_id, job.args, job.restart_info, self.channel.clone())?;
+        let job = self
+            .jobs
+            .get(&job_id)
+            .ok_or(DispatcherError::JobNotFoundError(job_id))?;
+        let child = Runner::spawn(job_id, &job.args, job.restart.clone(), self.channel.clone())?;
         self.procs.lock().expect("lock").push(child);
         // Wait for startup failure
         thread::sleep(Duration::from_millis(10));
@@ -515,8 +502,7 @@ fn child_watcher(
         // PID of terminated process sent from output_listener
         let pid = recv.recv().expect("recv");
         let ts = Local::now();
-        let mut respawn_child = None;
-        if let Some(child) = procs
+        let respawn_child = if let Some(child) = procs
             .lock()
             .expect("lock")
             .iter_mut()
@@ -531,26 +517,17 @@ fn child_watcher(
             } else {
                 info!(target: &format!("{pid}"), "Process terminated");
             }
-            let respawn = !child.user_terminated
-                && match child.restart_info.policy {
-                    Restart::Always => true,
-                    Restart::OnFailure => {
-                        matches!(child.info.state, ProcStatus::ExitErr(code) if code > 0)
-                    }
-                    Restart::Never => false,
-                };
-            if respawn {
-                respawn_child = Some((child.info.clone(), child.restart_info.clone()));
-            }
+            child.restart_infos()
         } else {
             info!(target: &format!("{pid}"), "(Unknown) process terminated");
-        }
-        if let Some((child_info, restart_info)) = respawn_child {
-            thread::sleep(Duration::from_millis(restart_info.wait_time));
+            None
+        };
+        if let Some(spawn_info) = respawn_child {
+            thread::sleep(Duration::from_millis(spawn_info.restart_info.wait_time));
             let result = Runner::spawn(
-                child_info.job_id,
-                &child_info.cmd_args,
-                restart_info,
+                spawn_info.job_id,
+                &spawn_info.args,
+                spawn_info.restart_info,
                 sender.clone(),
             );
             match result {

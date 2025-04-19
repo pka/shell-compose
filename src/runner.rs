@@ -1,4 +1,4 @@
-use crate::{DispatcherError, Formatter, JobId, Pid, RestartInfo};
+use crate::{DispatcherError, Formatter, JobId, Pid, RestartInfo, RestartPolicy};
 use chrono::{DateTime, Local};
 use command_group::{CommandGroup, GroupChild};
 use log::info;
@@ -47,6 +47,13 @@ pub struct ProcInfo {
     pub total_read_bytes: u64,
     /// Read bytes per second.
     pub read_bytes: u64,
+}
+
+/// Required information for spawning a new process.
+pub struct JobSpawnInfo {
+    pub job_id: JobId,
+    pub args: Vec<String>,
+    pub restart_info: RestartInfo,
 }
 
 impl ProcInfo {
@@ -211,6 +218,25 @@ impl Runner {
         info!("Terminating process {}", self.proc.id());
         self.proc.kill()?;
         Ok(())
+    }
+    pub fn restart_infos(&mut self) -> Option<JobSpawnInfo> {
+        let respawn = !self.user_terminated
+            && match self.restart_info.policy {
+                RestartPolicy::Always => true,
+                RestartPolicy::OnFailure => {
+                    matches!(self.info.state, ProcStatus::ExitErr(code) if code > 0)
+                }
+                RestartPolicy::Never => false,
+            };
+        if respawn {
+            Some(JobSpawnInfo {
+                job_id: self.info.job_id,
+                args: self.info.cmd_args.clone(),
+                restart_info: self.restart_info.clone(),
+            })
+        } else {
+            None
+        }
     }
 }
 
