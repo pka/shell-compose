@@ -60,6 +60,7 @@ pub struct RestartInfo {
     // stats: #Runs, #Success, #Restarts
 }
 
+/// Information for jobs command
 #[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct Job {
     pub id: JobId,

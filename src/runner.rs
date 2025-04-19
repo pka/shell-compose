@@ -1,5 +1,5 @@
 use crate::{DispatcherError, Formatter, JobId, Pid, RestartInfo, RestartPolicy};
-use chrono::{DateTime, Local};
+use chrono::{DateTime, Local, TimeDelta};
 use command_group::{CommandGroup, GroupChild};
 use log::info;
 use serde::{Deserialize, Serialize};
@@ -229,10 +229,18 @@ impl Runner {
                 RestartPolicy::Never => false,
             };
         if respawn {
+            let last_duration = self.info.end.unwrap_or(Local::now()) - self.info.start;
+            let mut restart_info = self.restart_info.clone();
+            if last_duration > TimeDelta::milliseconds(50) {
+                // Reset wait time after a long run
+                restart_info.wait_time = 50;
+            } else {
+                restart_info.wait_time *= 2;
+            }
             Some(JobSpawnInfo {
                 job_id: self.info.job_id,
                 args: self.info.cmd_args.clone(),
-                restart_info: self.restart_info.clone(),
+                restart_info,
             })
         } else {
             None
