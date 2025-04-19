@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="utf-8"?><rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom" xmlns:content="http://purl.org/rss/1.0/modules/content/"><channel><title>shell-compose Changelog</title><link>http://127.0.0.1:7979/shell-compose/changelog</link><description>Changelog information for shell-compose</description><category domain="https://github.com/pka/shell-compose">shell-compose Changelog</category><atom:link href="http://127.0.0.1:7979/shell-compose/changelog.rss" rel="self"/><item><title>0.3.2 - 2025-04-19</title><link>http://127.0.0.1:7979/shell-compose/changelog/v0.3.2</link><category domain="https://github.com/pka/shell-compose">shell-compose Changelog</category><guid>http://127.0.0.1:7979/shell-compose/changelog/v0.3.2</guid><content:encoded><![CDATA[<ul>
+<li>Exponential backoff for restarting jobs</li>
+<li>LOC: 1417</li>
+</ul>
+]]></content:encoded></item><item><title>0.3.1 - 2025-04-18</title><link>http://127.0.0.1:7979/shell-compose/changelog/v0.3.1</link><category domain="https://github.com/pka/shell-compose">shell-compose Changelog</category><guid>http://127.0.0.1:7979/shell-compose/changelog/v0.3.1</guid><content:encoded><![CDATA[<ul>
+<li>Create process groups</li>
+<li>Emit cli error as log message</li>
+<li>LOC: 1409</li>
+</ul>
+]]></content:encoded></item><item><title>0.3.0 - 2024-10-13</title><link>http://127.0.0.1:7979/shell-compose/changelog/v0.3.0</link><category domain="https://github.com/pka/shell-compose">shell-compose Changelog</category><guid>http://127.0.0.1:7979/shell-compose/changelog/v0.3.0</guid><content:encoded><![CDATA[<ul>
+<li>Collect system stats for running processes</li>
+<li>Create a background service instance per user</li>
+<li>Restrict access permissions for communication socket</li>
+<li>Initial work for Windows Security Context</li>
+<li>Differentate restart policies for job types</li>
+<li>Fix restart of failed services</li>
+<li>LOC: 1404</li>
+</ul>
+]]></content:encoded></item><item><title>v0.3.0-beta2</title><link>http://127.0.0.1:7979/shell-compose/changelog/v0.3.0-beta2</link><category domain="https://github.com/pka/shell-compose">shell-compose Changelog</category><guid>http://127.0.0.1:7979/shell-compose/changelog/v0.3.0-beta2</guid><content:encoded><![CDATA[<ul>
+<li>Collect system stats for running processes</li>
+<li>Create a background service instance per user</li>
+<li>Restrict access permissions for communication socket</li>
+<li>Initial work for Windows Security Context</li>
+<li>Differentate restart policies for job types</li>
+<li>Fix restart of failed services</li>
+<li>LOC: 1404</li>
+</ul>
+]]></content:encoded></item><item><title>0.2.2 - 2024-10-12</title><link>http://127.0.0.1:7979/shell-compose/changelog/0.2.2</link><category domain="https://github.com/pka/shell-compose">shell-compose Changelog</category><guid>http://127.0.0.1:7979/shell-compose/changelog/0.2.2</guid><content:encoded><![CDATA[<ul>
+<li>Fix background process termination with Ctrl-C on Windows</li>
+</ul>
+]]></content:encoded></item><item><title>0.2.1 - 2024-10-10</title><link>http://127.0.0.1:7979/shell-compose/changelog/v0.2.1</link><category domain="https://github.com/pka/shell-compose">shell-compose Changelog</category><guid>http://127.0.0.1:7979/shell-compose/changelog/v0.2.1</guid><content:encoded><![CDATA[<ul>
+<li>Fix log output without filter</li>
+<li>Sort buffered log entries by timestamp</li>
+</ul>
+]]></content:encoded></item><item><title>0.2.0 - 2024-10-09</title><link>http://127.0.0.1:7979/shell-compose/changelog/v0.2.0</link><category domain="https://github.com/pka/shell-compose">shell-compose Changelog</category><guid>http://127.0.0.1:7979/shell-compose/changelog/v0.2.0</guid><content:encoded><![CDATA[<ul>
+<li><code>jobs</code> command listing active jobs</li>
+<li><code>stop</code> command for commands, services and cron jobs</li>
+<li><code>down</code> command for service groups</li>
+<li>Handle services as single-instance jobs</li>
+<li>Respawn processes with exit status &gt; 0</li>
+<li>LOC: 1145</li>
+</ul>
+]]></content:encoded></item><item><title>0.1.3 - 2024-10-04</title><link>http://127.0.0.1:7979/shell-compose/changelog/v0.1.3</link><category domain="https://github.com/pka/shell-compose">shell-compose Changelog</category><guid>http://127.0.0.1:7979/shell-compose/changelog/v0.1.3</guid><content:encoded><![CDATA[<ul>
+<li>Stop waiting for new logs when client disconnects</li>
+</ul>
+]]></content:encoded></item><item><title>v0.1.2</title><link>http://127.0.0.1:7979/shell-compose/changelog/v0.1.2</link><category domain="https://github.com/pka/shell-compose">shell-compose Changelog</category><guid>http://127.0.0.1:7979/shell-compose/changelog/v0.1.2</guid><content:encoded><![CDATA[<h3>New features</h3>
+<ul>
+<li>aarch64-unknown-linux-gnu binary package</li>
+</ul>
+<h3>Fixes</h3>
+<ul>
+<li>Check for terminal color support</li>
+</ul>
+]]></content:encoded></item><item><title>v0.1.1</title><link>http://127.0.0.1:7979/shell-compose/changelog/v0.1.1</link><category domain="https://github.com/pka/shell-compose">shell-compose Changelog</category><guid>http://127.0.0.1:7979/shell-compose/changelog/v0.1.1</guid><content:encoded><![CDATA[<ul>
+<li>Fix background process filename on Windows</li>
+</ul>
+]]></content:encoded></item><item><title>v0.1.0</title><link>http://127.0.0.1:7979/shell-compose/changelog/v0.1.0</link><category domain="https://github.com/pka/shell-compose">shell-compose Changelog</category><guid>http://127.0.0.1:7979/shell-compose/changelog/v0.1.0</guid><content:encoded><![CDATA[<ul>
+<li>First public release</li>
+<li>LOC: 808</li>
+</ul>
+]]></content:encoded></item></channel></rss>
