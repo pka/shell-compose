@@ -153,7 +153,7 @@ impl Dispatcher<'_> {
         let _watcher = thread::spawn(move || child_watcher(procs_spawn, send_spawn, recv));
 
         let system = System::new_with_specifics(
-            RefreshKind::new().with_processes(ProcessRefreshKind::new()),
+            RefreshKind::nothing().with_processes(ProcessRefreshKind::nothing()),
         );
 
         Dispatcher {
@@ -333,7 +333,7 @@ impl Dispatcher<'_> {
         self.system.refresh_processes_specifics(
             ProcessesToUpdate::All,
             true,
-            ProcessRefreshKind::new().with_cpu(),
+            ProcessRefreshKind::nothing().with_cpu(),
         );
         // Collect pids and child pids
         let pids: Vec<sysinfo::Pid> = self
@@ -361,7 +361,7 @@ impl Dispatcher<'_> {
         self.system.refresh_processes_specifics(
             ProcessesToUpdate::Some(&pids),
             true,
-            ProcessRefreshKind::new()
+            ProcessRefreshKind::nothing()
                 .with_cpu()
                 .with_disk_usage()
                 .with_memory(),

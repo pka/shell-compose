@@ -300,8 +300,8 @@ fn output_listener<R: Read>(
 /// Current user
 pub fn get_user_name() -> Option<String> {
     let system = System::new_with_specifics(
-        RefreshKind::new()
-            .with_processes(ProcessRefreshKind::new().with_user(UpdateKind::OnlyIfNotSet)),
+        RefreshKind::nothing()
+            .with_processes(ProcessRefreshKind::nothing().with_user(UpdateKind::OnlyIfNotSet)),
     );
     let users = Users::new_with_refreshed_list();
     let pid = process::id();
