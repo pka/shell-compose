@@ -18,15 +18,14 @@ Shell Compose is a lightweight background process runner for long-running or sch
   - [x] Start `just` recipes
   - [ ] Configure commands and cron jobs in a YAML file
   - [x] Support task dependencies (via Justfile)
-  - [ ] Attach console to running job
   - [x] Restarting failed jobs
-  - [ ] Trigger execution by file changes
   - [ ] Trigger execution by calling HTTP endpoint
 * Observability
   - [x] Show process status
   - [x] Show process resource usage
   - [x] Show logs of all running jobs
   - [x] Show logs of selected jobs
+  - [ ] Write output to system logger (journald, etc.)
   - [ ] Metrics endpoint
 * Cross Platform
   - [x] Linux
@@ -37,7 +36,7 @@ Shell Compose is a lightweight background process runner for long-running or sch
 ## Integration with `just`
 
 [just](https://just.systems/man/en/) is a command runner with syntax inspired by `make`.
-It supports shell commands but also other languages like Python or NodeJS. 
+It supports shell commands but also other languages like Python or NodeJS.
 Tasks can have dependencies and variables loaded from `.env` files.
 
 Example:
@@ -77,6 +76,12 @@ shell-compose up autostart
 ```
 
 <div class="oranda-hide">
+
+## Similar projects
+
+To start tasks in response to file modifications, consider using [watchexec](https://github.com/watchexec/watchexec).
+
+For interactive background tasks, consider using [Zellij](https://zellij.dev/), [tmux](http://tmux.github.io/) or [screen](https://www.gnu.org/software/screen/).
 
 ## Installation
 
