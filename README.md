@@ -16,7 +16,7 @@ Shell Compose is a lightweight background process runner for long-running or sch
   - [x] Run multiple jobs in parallel
   - [x] Schedule commands to run like a cron job
   - [x] Start `just` recipes
-  - [ ] Configure commands and cron jobs in a YAML file
+  - [ ] Config file for cron jobs (Justfile annotations?)
   - [x] Support task dependencies (via Justfile)
   - [x] Restarting failed jobs
   - [ ] Trigger execution by calling HTTP endpoint
@@ -25,7 +25,6 @@ Shell Compose is a lightweight background process runner for long-running or sch
   - [x] Show process resource usage
   - [x] Show logs of all running jobs
   - [x] Show logs of selected jobs
-  - [ ] Write output to system logger (journald, etc.)
   - [ ] Metrics endpoint
 * Cross Platform
   - [x] Linux
@@ -75,13 +74,17 @@ Running all recipes in a group:
 shell-compose up autostart
 ```
 
-<div class="oranda-hide">
-
 ## Similar projects
+
+* [PM2](https://github.com/Unitech/pm2): Production process manager for Node.js/Bun applications with a built-in load balancer.
+
+* [Pueue](https://github.com/Nukesor/pueue): Command-line task management tool for sequential and parallel execution of long-running tasks.
 
 To start tasks in response to file modifications, consider using [watchexec](https://github.com/watchexec/watchexec).
 
-For interactive background tasks, consider using [Zellij](https://zellij.dev/), [tmux](http://tmux.github.io/) or [screen](https://www.gnu.org/software/screen/).
+For interactive background tasks, consider using [Pueue](https://github.com/Nukesor/pueue) or a terminal multiplexer like [Zellij](https://zellij.dev/), [tmux](http://tmux.github.io/) or [screen](https://www.gnu.org/software/screen/).
+
+<div class="oranda-hide">
 
 ## Installation
 
@@ -121,3 +124,40 @@ cargo install shell-compose --locked
 ```
 
 </div>
+
+## Run with systemd and journal logging
+
+Unit file example:
+```
+[Unit]
+Description=Shell Compose
+After=network.target
+Requires=network.target
+
+[Service]
+Type=exec
+User=user
+Group=user
+WorkingDirectory=/home/user/my-project-justfile-root
+ExecStart=/usr/local/bin/shell-composed up autostart
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
+```
+
+The background process `shell-composed` supports a subset of the `shell-compose` command line arguments:
+```
+Usage: shell-composed [COMMAND]
+
+Commands:
+  run    Execute command
+  runat  Execute command with cron schedule
+  start  Start service
+  up     Start service group
+  help   Print this message or the help of the given subcommand(s)
+
+Options:
+  -h, --help     Print help
+  -V, --version  Print version
+```
