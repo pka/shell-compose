@@ -46,7 +46,7 @@ pub enum JobType {
 }
 
 /// Restart policy
-#[derive(Clone, Serialize, Deserialize, Debug)]
+#[derive(clap::ValueEnum, Clone, Serialize, Deserialize, Debug)]
 pub enum RestartPolicy {
     Always,
     OnFailure,
@@ -109,12 +109,13 @@ impl Default for RestartInfo {
 }
 
 impl JobInfo {
-    pub fn new_shell_job(args: Vec<String>) -> Self {
+    pub fn new_shell_job(args: Vec<String>, restart: Option<RestartPolicy>) -> Self {
+        let policy = restart.unwrap_or(RestartPolicy::Never);
         JobInfo {
             job_type: JobType::Shell,
             args,
             restart: RestartInfo {
-                policy: RestartPolicy::Never,
+                policy,
                 ..Default::default()
             },
         }
@@ -136,13 +137,17 @@ impl JobInfo {
             .collect::<Vec<_>>()
             .join(" ")
     }
-    pub fn new_service(service: &str, svc_args: &[String]) -> Self {
+    pub fn new_service(service: &str, svc_args: &[String], restart: Option<RestartPolicy>) -> Self {
         let mut args = vec!["just".to_string(), service.to_string()];
         args.extend(svc_args.to_vec());
+        let policy = restart.unwrap_or(RestartPolicy::OnFailure);
         JobInfo {
             job_type: JobType::Service(Self::service_command(service, svc_args)),
             args,
-            restart: RestartInfo::default(),
+            restart: RestartInfo {
+                policy,
+                ..Default::default()
+            },
         }
     }
 }
@@ -177,9 +182,13 @@ impl Dispatcher<'_> {
     pub fn exec_command(&mut self, cmd: ExecCommand) -> Message {
         info!("Executing `{cmd:?}`");
         let res = match cmd {
-            ExecCommand::Run { args } => self.run(&args),
+            ExecCommand::Run { args, restart } => self.run(&args, restart),
             ExecCommand::Runat { at, args } => self.run_at(&at, &args),
-            ExecCommand::Start { service, args } => self.start(&service, &args),
+            ExecCommand::Start {
+                service,
+                args,
+                restart,
+            } => self.start(&service, &args, restart),
             ExecCommand::Up { group } => self.up(&group),
         };
         match res {
@@ -220,8 +229,12 @@ impl Dispatcher<'_> {
             )
             .map(|(id, _info)| *id)
     }
-    fn run(&mut self, args: &[String]) -> Result<Vec<JobId>, DispatcherError> {
-        let job_info = JobInfo::new_shell_job(args.to_vec());
+    fn run(
+        &mut self,
+        args: &[String],
+        policy: Option<RestartPolicy>,
+    ) -> Result<Vec<JobId>, DispatcherError> {
+        let job_info = JobInfo::new_shell_job(args.to_vec(), policy);
         let job_id = self.add_job(job_info);
         self.spawn_job(job_id)?;
         Ok(vec![job_id])
@@ -289,11 +302,16 @@ impl Dispatcher<'_> {
         Ok(vec![job_id])
     }
     /// Start service (just recipe)
-    fn start(&mut self, service: &str, args: &[String]) -> Result<Vec<JobId>, DispatcherError> {
+    fn start(
+        &mut self,
+        service: &str,
+        args: &[String],
+        policy: Option<RestartPolicy>,
+    ) -> Result<Vec<JobId>, DispatcherError> {
         // Find existing job or add new
         let job_id = self
             .find_job(service, args)
-            .unwrap_or_else(|| self.add_job(JobInfo::new_service(service, args)));
+            .unwrap_or_else(|| self.add_job(JobInfo::new_service(service, args, policy)));
         // Check for existing process for this service
         let running = self
             .procs
@@ -314,7 +332,7 @@ impl Dispatcher<'_> {
         let justfile = Justfile::parse()?;
         let recipes = justfile.group_recipes(group);
         for service in recipes {
-            let ids = self.start(&service, &[])?;
+            let ids = self.start(&service, &[], None)?;
             job_ids.extend(ids);
         }
         Ok(job_ids)

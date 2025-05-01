@@ -1,4 +1,4 @@
-use crate::{DispatcherError, Job, JobId, LogLine, ProcInfo};
+use crate::{DispatcherError, Job, JobId, LogLine, ProcInfo, RestartPolicy};
 use clap::{Parser, Subcommand};
 use serde::{Deserialize, Serialize};
 
@@ -13,6 +13,9 @@ pub enum ExecCommand {
     Run {
         /// Command arguments
         args: Vec<String>,
+        /// Restart policy
+        #[arg(short, long, value_name = "POLICY")]
+        restart: Option<RestartPolicy>,
     },
     /// Execute command with cron schedule
     Runat {
@@ -27,6 +30,9 @@ pub enum ExecCommand {
         service: String,
         /// Service arguments
         args: Vec<String>,
+        /// Restart policy
+        #[arg(short, long, value_name = "POLICY")]
+        restart: Option<RestartPolicy>,
     },
     /// Start service group
     Up {
