@@ -25,6 +25,8 @@ pub enum ExecCommand {
     Start {
         /// Service name
         service: String,
+        /// Service arguments
+        args: Vec<String>,
     },
     /// Start service group
     Up {

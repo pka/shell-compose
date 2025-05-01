@@ -32,14 +32,16 @@ pub struct Dispatcher<'a> {
 pub struct JobInfo {
     pub job_type: JobType,
     pub args: Vec<String>,
-    pub entrypoint: Option<String>,
     pub restart: RestartInfo,
 }
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
 pub enum JobType {
+    /// Shell command
     Shell,
+    /// Service with command string
     Service(String),
+    /// Cron job with time spec
     Cron(String),
 }
 
@@ -111,7 +113,6 @@ impl JobInfo {
         JobInfo {
             job_type: JobType::Shell,
             args,
-            entrypoint: None,
             restart: RestartInfo {
                 policy: RestartPolicy::Never,
                 ..Default::default()
@@ -122,18 +123,25 @@ impl JobInfo {
         JobInfo {
             job_type: JobType::Cron(cron),
             args,
-            entrypoint: None,
             restart: RestartInfo {
                 policy: RestartPolicy::Never,
                 ..Default::default()
             },
         }
     }
-    pub fn new_service(service: String) -> Self {
+    pub fn service_command(service: &str, args: &[String]) -> String {
+        [service]
+            .into_iter()
+            .chain(args.iter().map(|arg| arg.as_str()))
+            .collect::<Vec<_>>()
+            .join(" ")
+    }
+    pub fn new_service(service: &str, svc_args: &[String]) -> Self {
+        let mut args = vec!["just".to_string(), service.to_string()];
+        args.extend(svc_args.to_vec());
         JobInfo {
-            job_type: JobType::Service(service.clone()),
-            args: vec!["just".to_string(), service], // TODO: exclude entrypoint
-            entrypoint: Some("just".to_string()),
+            job_type: JobType::Service(Self::service_command(service, svc_args)),
+            args,
             restart: RestartInfo::default(),
         }
     }
@@ -171,7 +179,7 @@ impl Dispatcher<'_> {
         let res = match cmd {
             ExecCommand::Run { args } => self.run(&args),
             ExecCommand::Runat { at, args } => self.run_at(&at, &args),
-            ExecCommand::Start { service } => self.start(&service),
+            ExecCommand::Start { service, args } => self.start(&service, &args),
             ExecCommand::Up { group } => self.up(&group),
         };
         match res {
@@ -203,10 +211,13 @@ impl Dispatcher<'_> {
         self.last_job_id
     }
     /// Find service job
-    fn find_job(&self, service: &str) -> Option<JobId> {
+    fn find_job(&self, service: &str, args: &[String]) -> Option<JobId> {
+        let cmd = JobInfo::service_command(service, args);
         self.jobs
             .iter()
-            .find(|(_id, info)| matches!(&info.job_type, JobType::Service(name) if name == service))
+            .find(
+                |(_id, info)| matches!(&info.job_type, JobType::Service(command) if *command == cmd),
+            )
             .map(|(id, _info)| *id)
     }
     fn run(&mut self, args: &[String]) -> Result<Vec<JobId>, DispatcherError> {
@@ -278,11 +289,11 @@ impl Dispatcher<'_> {
         Ok(vec![job_id])
     }
     /// Start service (just recipe)
-    fn start(&mut self, service: &str) -> Result<Vec<JobId>, DispatcherError> {
+    fn start(&mut self, service: &str, args: &[String]) -> Result<Vec<JobId>, DispatcherError> {
         // Find existing job or add new
         let job_id = self
-            .find_job(service)
-            .unwrap_or_else(|| self.add_job(JobInfo::new_service(service.to_string())));
+            .find_job(service, args)
+            .unwrap_or_else(|| self.add_job(JobInfo::new_service(service, args)));
         // Check for existing process for this service
         let running = self
             .procs
@@ -303,7 +314,7 @@ impl Dispatcher<'_> {
         let justfile = Justfile::parse()?;
         let recipes = justfile.group_recipes(group);
         for service in recipes {
-            let ids = self.start(&service)?;
+            let ids = self.start(&service, &[])?;
             job_ids.extend(ids);
         }
         Ok(job_ids)
@@ -435,7 +446,7 @@ impl Dispatcher<'_> {
                 }
             } else {
                 job_id_filter = Some(
-                    self.find_job(&job_or_service)
+                    self.find_job(&job_or_service, &[])
                         .ok_or(DispatcherError::ServiceNotFoundError(job_or_service))?,
                 );
             }
