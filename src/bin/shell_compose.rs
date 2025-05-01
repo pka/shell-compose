@@ -126,7 +126,7 @@ fn cli() -> Result<(), DispatcherError> {
                 return Ok(());
             }
             Ok(Message::Err(msg)) => {
-                error!(target: "dispatcher", "{msg} - Check logs for more information");
+                error!(target: "dispatcher", "{msg}");
                 return Ok(());
             }
             Ok(Message::PsInfo(proc_infos)) => {

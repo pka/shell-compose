@@ -75,8 +75,8 @@ pub enum DispatcherError {
     DispatcherSpawnError(std::io::Error),
     #[error("Connection to `shell-composed` failed")]
     DispatcherSpawnTimeoutError,
-    #[error("Failed to spawn process: {0}")]
-    ProcSpawnError(std::io::Error),
+    #[error("Failed to spawn `{0}`: {1}")]
+    ProcSpawnError(String, std::io::Error),
     #[error("Failed to terminate child process: {0}")]
     KillError(std::io::Error),
     #[error("Job {0} not found")]
