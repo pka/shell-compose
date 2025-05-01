@@ -1,6 +1,7 @@
 use crate::{DispatcherError, Job, JobId, LogLine, ProcInfo, RestartPolicy};
 use clap::{Parser, Subcommand};
 use serde::{Deserialize, Serialize};
+use std::path::PathBuf;
 
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
@@ -74,7 +75,7 @@ pub enum Message {
     // cli <-> Listener
     Connect,
     // cli -> Listener
-    ExecCommand(ExecCommand),
+    ExecCommand(ExecCommand, PathBuf),
     CliCommand(CliCommand),
     // cli <- Listener
     PsInfo(Vec<ProcInfo>),
@@ -87,7 +88,8 @@ pub enum Message {
 
 impl From<ExecCommand> for Message {
     fn from(cmd: ExecCommand) -> Self {
-        Message::ExecCommand(cmd)
+        let cwd = std::env::current_dir().unwrap_or(".".into());
+        Message::ExecCommand(cmd, cwd)
     }
 }
 

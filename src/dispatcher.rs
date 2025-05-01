@@ -7,6 +7,7 @@ use job_scheduler_ng::{self as job_scheduler, JobScheduler};
 use log::{error, info};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap};
+use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::{mpsc, Arc, Mutex};
 use std::thread;
@@ -179,8 +180,9 @@ impl Dispatcher<'_> {
             channel: send,
         }
     }
-    pub fn exec_command(&mut self, cmd: ExecCommand) -> Message {
+    pub fn exec_command(&mut self, cmd: ExecCommand, cwd: PathBuf) -> Message {
         info!("Executing `{cmd:?}`");
+        std::env::set_current_dir(&cwd).unwrap();
         let res = match cmd {
             ExecCommand::Run { args, restart } => self.run(&args, restart),
             ExecCommand::Runat { at, args } => self.run_at(&at, &args),

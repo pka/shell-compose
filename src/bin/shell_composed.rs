@@ -18,7 +18,8 @@ fn run_server() {
 
     // Execute commands from CLI
     if let Ok(cmd) = exec_command {
-        dispatcher.exec_command(cmd);
+        let cwd = std::env::current_dir().unwrap_or(".".into());
+        dispatcher.exec_command(cmd, cwd);
     }
 
     let socket_name = IpcStream::user_socket_name();
@@ -39,8 +40,8 @@ fn run_server() {
             };
             match request {
                 Message::Connect => {}
-                Message::ExecCommand(cmd) => {
-                    let response = dispatcher.exec_command(cmd);
+                Message::ExecCommand(cmd, cwd) => {
+                    let response = dispatcher.exec_command(cmd, cwd);
                     stream.send_message(&response).unwrap()
                 }
                 Message::CliCommand(cmd) => dispatcher.cli_command(cmd, &mut stream),
