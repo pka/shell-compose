@@ -185,7 +185,7 @@ impl Dispatcher<'_> {
         std::env::set_current_dir(&cwd).unwrap();
         let res = match cmd {
             ExecCommand::Run { args, restart } => self.run(&args, restart),
-            ExecCommand::Runat { at, args } => self.run_at(&at, &args),
+            ExecCommand::Runat { at, args } => self.run_at(&at, cwd, &args),
             ExecCommand::Start {
                 service,
                 args,
@@ -284,7 +284,12 @@ impl Dispatcher<'_> {
         }
     }
     /// Add cron job
-    fn run_at(&mut self, cron: &str, args: &[String]) -> Result<Vec<JobId>, DispatcherError> {
+    fn run_at(
+        &mut self,
+        cron: &str,
+        cwd: PathBuf,
+        args: &[String],
+    ) -> Result<Vec<JobId>, DispatcherError> {
         let job_info = JobInfo::new_cron_job(cron.to_string(), args.to_vec());
         let restart_info = job_info.restart.clone();
         let job_id = self.add_job(job_info);
@@ -296,6 +301,7 @@ impl Dispatcher<'_> {
             .lock()
             .expect("lock")
             .add(job_scheduler::Job::new(cron.parse()?, move || {
+                std::env::set_current_dir(&cwd).unwrap();
                 let child = Runner::spawn(job_id, &job_args, restart_info.clone(), channel.clone())
                     .unwrap();
                 procs.lock().expect("lock").push(child);
