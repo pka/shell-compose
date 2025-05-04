@@ -1,6 +1,12 @@
+use crate::command::*;
+use crate::dispatcher::Job;
+use crate::display::*;
+use crate::ipc::*;
+use crate::runner::ProcInfo;
 use color_eyre::Result;
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use ratatui::{
+    layout::{Constraint, Direction, Layout},
     style::Stylize,
     text::Line,
     widgets::{Block, Paragraph},
@@ -18,6 +24,8 @@ pub fn run() -> color_eyre::Result<()> {
 /// The main application which holds the state and logic of the application.
 #[derive(Debug, Default)]
 pub struct App {
+    ps_infos: Vec<ProcInfo>,
+    job_infos: Vec<Job>,
     /// Is the application running?
     running: bool,
 }
@@ -25,7 +33,28 @@ pub struct App {
 impl App {
     /// Construct a new instance of [`App`].
     pub fn new() -> Self {
-        Self::default()
+        let mut stream = IpcStream::connect("tui").unwrap();
+        stream
+            .send_message(&Message::CliCommand(CliCommand::Ps))
+            .unwrap();
+        let Ok(Message::PsInfo(ps_infos)) = stream.receive_message() else {
+            eprintln!("Failed to receive process infos");
+            std::process::exit(1);
+        };
+        let mut stream = IpcStream::connect("tui").unwrap();
+        stream
+            .send_message(&Message::CliCommand(CliCommand::Jobs))
+            .unwrap();
+        let Ok(Message::JobInfo(job_infos)) = stream.receive_message() else {
+            eprintln!("Failed to receive job infos");
+            std::process::exit(1);
+        };
+        // LogLine(LogLine),
+        Self {
+            ps_infos,
+            job_infos,
+            running: false,
+        }
     }
 
     /// Run the application's main loop.
@@ -45,19 +74,37 @@ impl App {
     /// - <https://docs.rs/ratatui/latest/ratatui/widgets/index.html>
     /// - <https://github.com/ratatui/ratatui/tree/main/ratatui-widgets/examples>
     fn render(&mut self, frame: &mut Frame) {
-        let title = Line::from("Ratatui Simple Template")
-            .bold()
-            .blue()
-            .centered();
-        let text = "Hello, Ratatui!\n\n\
-            Created using https://github.com/ratatui/templates\n\
-            Press `Esc`, `Ctrl-C` or `q` to stop running.";
+        let horizontal_chunks = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
+            .split(frame.area());
+
+        // Split the left portion vertically
+        let vertical_chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
+            .split(horizontal_chunks[0]);
+
+        // top-left window
+        let ps_title = Line::from("Processes [1]").bold().blue().centered();
+        let keys = Line::from("Scroll [↓↑] | Quit [Esc] or [q]) ").centered();
+        let table = proc_info_ui_table(&self.ps_infos)
+            .block(Block::bordered().title(ps_title).title_bottom(keys));
+        frame.render_widget(table, vertical_chunks[0]);
+
+        // bottom-left window
+        let bottom_title = Line::from("Jobs [2]").bold().green().centered();
+        let table = job_info_ui_table(&self.job_infos).block(Block::bordered().title(bottom_title));
+        frame.render_widget(table, vertical_chunks[1]);
+
+        // right window
+        let log_title = Line::from("Log [3]").bold().red().centered();
         frame.render_widget(
-            Paragraph::new(text)
-                .block(Block::bordered().title(title))
+            Paragraph::new("This is the log window content.")
+                .block(Block::bordered().title(log_title))
                 .centered(),
-            frame.area(),
-        )
+            horizontal_chunks[1],
+        );
     }
 
     /// Reads the crossterm events and updates the state of [`App`].

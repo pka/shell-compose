@@ -134,7 +134,7 @@ fn clip_str(text: &str, max_len: usize) -> String {
     }
 }
 
-pub fn proc_info_table(proc_infos: &[ProcInfo]) {
+fn proc_info_raw_table(proc_infos: &[ProcInfo]) -> Table {
     const EMPTY: String = String::new();
 
     let mut table = Table::new();
@@ -174,11 +174,46 @@ pub fn proc_info_table(proc_infos: &[ProcInfo]) {
                 format!("{}", ByteSize(info.total_read_bytes)),
             ]
         }));
+    table
+}
 
+pub fn proc_info_table(proc_infos: &[ProcInfo]) {
+    let table = proc_info_raw_table(proc_infos);
     println!("{table}");
 }
 
-pub fn job_info_table(jobs: &[Job]) {
+pub fn proc_info_ui_table(proc_infos: &[ProcInfo]) -> ratatui::widgets::Table {
+    let table = proc_info_raw_table(proc_infos);
+    ui_table(table)
+}
+
+fn ui_table(raw_table: Table) -> ratatui::widgets::Table<'static> {
+    use ratatui::{
+        layout::Constraint,
+        style::{Color, Style},
+        widgets::{Row, Table},
+    };
+
+    let headers = raw_table
+        .header()
+        .unwrap()
+        .cell_iter()
+        .map(|col| col.content())
+        .collect::<Vec<_>>();
+    let widths = raw_table
+        .header()
+        .unwrap()
+        .cell_iter()
+        .map(|_| Constraint::Length(15))
+        .collect::<Vec<_>>();
+    let rows = raw_table.row_iter().map(|row| {
+        let cols = row.cell_iter().map(|col| col.content()).collect::<Vec<_>>();
+        Row::new(cols)
+    });
+    Table::new(rows, widths).header(Row::new(headers).style(Style::default().fg(Color::Yellow)))
+}
+
+fn job_info_raw_table(jobs: &[Job]) -> Table {
     const EMPTY: String = String::new();
 
     let mut table = Table::new();
@@ -199,6 +234,15 @@ pub fn job_info_table(jobs: &[Job]) {
             };
             vec![format!("{}", job.id), clip_str(command, 30), at.to_string()]
         }));
+    table
+}
 
+pub fn job_info_table(jobs: &[Job]) {
+    let table = job_info_raw_table(jobs);
     println!("{table}");
+}
+
+pub fn job_info_ui_table(jobs: &[Job]) -> ratatui::widgets::Table {
+    let table = job_info_raw_table(jobs);
+    ui_table(table)
 }
