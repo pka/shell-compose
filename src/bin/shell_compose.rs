@@ -91,6 +91,10 @@ fn cli() -> Result<(), DispatcherError> {
         }
     }
 
+    if matches!(cli_command, Ok(CliCommand::Ui)) {
+        return tui::run().map_err(|_| DispatcherError::UnexpectedMessageError);
+    }
+
     let mut stream = IpcStream::connect("cli")?;
     let msg: Message = exec_command
         .map(Into::into)

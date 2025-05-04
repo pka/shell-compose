@@ -6,6 +6,7 @@ mod display;
 mod ipc;
 mod justfile;
 mod runner;
+pub mod tui;
 
 pub use command::*;
 pub use dispatcher::*;

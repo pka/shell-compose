@@ -210,6 +210,7 @@ impl Dispatcher<'_> {
             CliCommand::Jobs => self.jobs(stream),
             CliCommand::Logs { job_or_service } => self.log(job_or_service, stream),
             CliCommand::Exit => std::process::exit(0),
+            CliCommand::Ui => unreachable!(),
         };
         if let Err(e) = &res {
             error!("{e}");

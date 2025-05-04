@@ -45,6 +45,8 @@ pub enum ExecCommand {
 /// Additional commands
 #[derive(Subcommand, Debug, Serialize, Deserialize)]
 pub enum CliCommand {
+    /// Run UI
+    Ui,
     /// Stop service group
     Down {
         /// Service group name
