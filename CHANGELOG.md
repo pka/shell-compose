@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.4.0 - 2025-05-04
+
+- Pass working directory to background process
+- Support service arguments
+- Add restart policy argument
+- LOC: 1459
+
 ## 0.3.2 - 2025-04-19
 
 - Exponential backoff for restarting jobs
