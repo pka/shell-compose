@@ -7,9 +7,9 @@ use color_eyre::Result;
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use ratatui::{
     layout::{Constraint, Direction, Layout},
-    style::Stylize,
+    style::{Style, Stylize},
     text::Line,
-    widgets::{Block, Paragraph},
+    widgets::{Block, Paragraph, TableState},
     DefaultTerminal, Frame,
 };
 
@@ -22,16 +22,18 @@ pub fn run() -> color_eyre::Result<()> {
 }
 
 /// The main application which holds the state and logic of the application.
-#[derive(Debug, Default)]
 pub struct App {
     ps_infos: Vec<ProcInfo>,
     job_infos: Vec<Job>,
+    windows: Vec<Window>,
+    active_window: usize,
     /// Is the application running?
     running: bool,
 }
 
 impl App {
     /// Construct a new instance of [`App`].
+    #[allow(clippy::new_without_default)]
     pub fn new() -> Self {
         let mut stream = IpcStream::connect("tui").unwrap();
         stream
@@ -49,12 +51,33 @@ impl App {
             eprintln!("Failed to receive job infos");
             std::process::exit(1);
         };
+        let keys = "Scroll [↓↑] | Quit [Esc] or [q]) ";
+        let mut windows = vec![
+            Window::new(" Processes [1] ", keys),
+            Window::new(" Jobs [2] ", keys),
+            Window::new(" Log [3] ", keys),
+        ];
+        let active_window = 0;
+        windows[active_window].set_active(true);
+
         // LogLine(LogLine),
         Self {
             ps_infos,
             job_infos,
+            windows,
+            active_window,
             running: false,
         }
+    }
+
+    fn window(&mut self) -> &mut Window {
+        &mut self.windows[self.active_window]
+    }
+
+    fn set_active_window(&mut self, window_idx: usize) {
+        self.window().set_active(false);
+        self.active_window = window_idx;
+        self.window().set_active(true);
     }
 
     /// Run the application's main loop.
@@ -85,26 +108,42 @@ impl App {
             .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
             .split(horizontal_chunks[0]);
 
+        macro_rules! block_fn {
+            ($window:expr, $area:expr, $col:ident) => {{
+                $window.set_table_height($area.height);
+                let title = Line::from($window.title.as_str()).bold().$col().centered();
+                let mut block = Block::bordered()
+                    .border_style($window.border_style())
+                    .title(title);
+                if $window.active {
+                    block = block.title_bottom(Line::from($window.keys.as_str()).centered());
+                }
+                block
+            }};
+        }
         // top-left window
-        let ps_title = Line::from("Processes [1]").bold().blue().centered();
-        let keys = Line::from("Scroll [↓↑] | Quit [Esc] or [q]) ").centered();
+        let area = vertical_chunks[0];
+        let window = &mut self.windows[0];
         let table = proc_info_ui_table(&self.ps_infos)
-            .block(Block::bordered().title(ps_title).title_bottom(keys));
-        frame.render_widget(table, vertical_chunks[0]);
+            .row_highlight_style(Style::new().reversed())
+            .block(block_fn!(window, area, blue));
+        frame.render_stateful_widget(table, area, &mut window.table_state);
 
         // bottom-left window
-        let bottom_title = Line::from("Jobs [2]").bold().green().centered();
-        let table = job_info_ui_table(&self.job_infos).block(Block::bordered().title(bottom_title));
-        frame.render_widget(table, vertical_chunks[1]);
+        let area = vertical_chunks[1];
+        let window = &mut self.windows[1];
+        let table = job_info_ui_table(&self.job_infos)
+            .row_highlight_style(Style::new().reversed())
+            .block(block_fn!(window, area, green));
+        frame.render_stateful_widget(table, area, &mut window.table_state);
 
         // right window
-        let log_title = Line::from("Log [3]").bold().red().centered();
-        frame.render_widget(
-            Paragraph::new("This is the log window content.")
-                .block(Block::bordered().title(log_title))
-                .centered(),
-            horizontal_chunks[1],
-        );
+        let area = horizontal_chunks[1];
+        let window = &mut self.windows[2];
+        let widget = Paragraph::new("This is the log window content.")
+            .block(block_fn!(window, area, red))
+            .centered();
+        frame.render_widget(widget, area);
     }
 
     /// Reads the crossterm events and updates the state of [`App`].
@@ -127,7 +166,19 @@ impl App {
         match (key.modifiers, key.code) {
             (_, KeyCode::Esc | KeyCode::Char('q'))
             | (KeyModifiers::CONTROL, KeyCode::Char('c') | KeyCode::Char('C')) => self.quit(),
-            // Add other key handlers here.
+            (_, KeyCode::Char('1')) => self.set_active_window(0),
+            (_, KeyCode::Char('2')) => self.set_active_window(1),
+            (_, KeyCode::Char('3')) => self.set_active_window(2),
+            (_, KeyCode::Tab) => {
+                self.set_active_window((self.active_window + 1) % self.windows.len())
+            }
+            (_, KeyCode::BackTab) => self.set_active_window(
+                (self.active_window + self.windows.len() - 1) % self.windows.len(),
+            ),
+            (_, KeyCode::Up) => self.window().up(),
+            (_, KeyCode::Down) => self.window().down(),
+            (_, KeyCode::PageUp) => self.window().page_up(),
+            (_, KeyCode::PageDown) => self.window().page_down(),
             _ => {}
         }
     }
@@ -135,5 +186,65 @@ impl App {
     /// Set running to false to quit the application.
     fn quit(&mut self) {
         self.running = false;
+    }
+}
+
+struct Window {
+    title: String,
+    keys: String,
+    active: bool,
+    selected_row: Option<usize>,
+    table_state: TableState,
+    table_height: u16,
+}
+
+impl Window {
+    pub fn new(title: &str, keys: &str) -> Self {
+        Window {
+            title: title.to_string(),
+            keys: keys.to_string(),
+            active: false,
+            selected_row: None,
+            table_state: TableState::new(),
+            table_height: 0,
+        }
+    }
+    fn set_table_height(&mut self, height: u16) {
+        self.table_height = height;
+    }
+    fn set_active(&mut self, active: bool) {
+        self.active = active;
+        if self.active {
+            if self.selected_row.is_none() {
+                self.table_state.select_first();
+            } else {
+                self.table_state.select(self.selected_row);
+            }
+        } else {
+            self.selected_row = self.table_state.selected();
+            self.table_state.select(None);
+        }
+    }
+    fn up(&mut self) {
+        self.table_state.select_previous();
+    }
+    fn down(&mut self) {
+        self.table_state.select_next();
+    }
+    fn page_up(&mut self) {
+        self.table_state.scroll_up_by(self.table_height);
+    }
+    fn page_down(&mut self) {
+        self.table_state.scroll_down_by(self.table_height);
+    }
+    fn border_style(&self) -> Style {
+        let active_window_border = Style::new().yellow();
+        let inactive_window_border = Style::new();
+
+        if self.active {
+            active_window_border
+        } else {
+            inactive_window_border
+        }
     }
 }

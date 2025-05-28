@@ -141,7 +141,7 @@ fn proc_info_raw_table(proc_infos: &[ProcInfo]) -> Table {
     table
         .load_preset(UTF8_FULL)
         .set_header(vec![
-            "Job", "PID", "Status", "Command", "Start", "End", "Cpu", "Mem", "Virt", "Write",
+            "PID", "Job", "Status", "Command", "Start", "End", "Cpu", "Mem", "Virt", "Write",
             "Total", "Read", "Total",
         ])
         .set_content_arrangement(ContentArrangement::DynamicFullWidth)
@@ -159,8 +159,8 @@ fn proc_info_raw_table(proc_infos: &[ProcInfo]) -> Table {
                 EMPTY
             };
             vec![
-                format!("{}", info.job_id),
                 format!("{}", info.pid),
+                format!("{}", info.job_id),
                 status,
                 clip_str(&command, 30),
                 format!("{}", info.start.format("%F %T")),
