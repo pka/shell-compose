@@ -33,6 +33,7 @@ impl DispatcherProc {
 
             // See https://stackoverflow.com/a/78989930 for a possible alternative.
         }
+        // Propagate debug log level to background process
         if env::var("RUST_LOG").unwrap_or("".to_string()) == "debug" {
             proc.env("RUST_LOG", "debug")
         } else {
@@ -92,7 +93,10 @@ fn cli() -> Result<(), DispatcherError> {
     }
 
     if matches!(cli_command, Ok(CliCommand::Ui)) {
-        return tui::run().map_err(|_| DispatcherError::UnexpectedMessageError);
+        return tui::run().map_err(|e| {
+            let _ = dbg!(e);
+            DispatcherError::UnexpectedMessageError // TODO: return better error
+        });
     }
 
     let mut stream = IpcStream::connect("cli")?;

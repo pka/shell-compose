@@ -204,8 +204,14 @@ impl Dispatcher<'_> {
     pub fn cli_command(&mut self, cmd: CliCommand, stream: &mut IpcStream) {
         info!("Executing `{cmd:?}`");
         let res = match cmd {
-            CliCommand::Stop { job_id } => self.stop(job_id),
-            CliCommand::Down { group } => self.down(&group),
+            CliCommand::Stop { job_id } => {
+                let res = self.stop(job_id);
+                stream.send_message(&res.into()).map_err(Into::into)
+            }
+            CliCommand::Down { group } => {
+                let res = self.down(&group);
+                stream.send_message(&res.into()).map_err(Into::into)
+            }
             CliCommand::Ps => self.ps(stream),
             CliCommand::Jobs => self.jobs(stream),
             CliCommand::Logs { job_or_service } => self.log(job_or_service, stream),
@@ -215,7 +221,6 @@ impl Dispatcher<'_> {
         if let Err(e) = &res {
             error!("{e}");
         }
-        let _ = stream.send_message(&res.into());
     }
     fn add_job(&mut self, job: JobInfo) -> JobId {
         self.last_job_id += 1;

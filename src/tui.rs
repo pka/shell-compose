@@ -3,7 +3,6 @@ use crate::dispatcher::Job;
 use crate::display::*;
 use crate::ipc::*;
 use crate::runner::ProcInfo;
-use color_eyre::Result;
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use ratatui::{
     layout::{Constraint, Direction, Layout},
@@ -12,17 +11,21 @@ use ratatui::{
     widgets::{Block, Paragraph, TableState},
     DefaultTerminal, Frame,
 };
+use std::time::{Duration, Instant};
 
 pub fn run() -> color_eyre::Result<()> {
     color_eyre::install()?;
     let terminal = ratatui::init();
     let result = App::new().run(terminal);
-    ratatui::restore();
+    if log::max_level() < log::LevelFilter::Debug {
+        ratatui::restore();
+    }
     result
 }
 
 /// The main application which holds the state and logic of the application.
 pub struct App {
+    stream: IpcStream,
     ps_infos: Vec<ProcInfo>,
     job_infos: Vec<Job>,
     windows: Vec<Window>,
@@ -35,22 +38,7 @@ impl App {
     /// Construct a new instance of [`App`].
     #[allow(clippy::new_without_default)]
     pub fn new() -> Self {
-        let mut stream = IpcStream::connect("tui").unwrap();
-        stream
-            .send_message(&Message::CliCommand(CliCommand::Ps))
-            .unwrap();
-        let Ok(Message::PsInfo(ps_infos)) = stream.receive_message() else {
-            eprintln!("Failed to receive process infos");
-            std::process::exit(1);
-        };
-        let mut stream = IpcStream::connect("tui").unwrap();
-        stream
-            .send_message(&Message::CliCommand(CliCommand::Jobs))
-            .unwrap();
-        let Ok(Message::JobInfo(job_infos)) = stream.receive_message() else {
-            eprintln!("Failed to receive job infos");
-            std::process::exit(1);
-        };
+        let stream = IpcStream::connect("tui").expect("IPC connection failed");
         let keys = "Scroll [↓↑] | Quit [Esc] or [q]) ";
         let mut windows = vec![
             Window::new(" Processes [1] ", keys),
@@ -62,12 +50,45 @@ impl App {
 
         // LogLine(LogLine),
         Self {
-            ps_infos,
-            job_infos,
+            stream,
+            ps_infos: vec![],
+            job_infos: vec![],
             windows,
             active_window,
             running: false,
         }
+    }
+
+    /// Run the application's main loop.
+    pub fn run(mut self, mut terminal: DefaultTerminal) -> color_eyre::Result<()> {
+        self.running = true;
+        let update_rate = Duration::from_millis(1000);
+        let mut last_tick = Instant::now() - update_rate;
+        while self.running {
+            if last_tick.elapsed() >= update_rate {
+                self.fetch_data()?;
+                last_tick = Instant::now();
+            }
+            terminal.draw(|frame| self.render(frame))?;
+            self.handle_crossterm_events()?;
+        }
+        Ok(())
+    }
+
+    fn fetch_data(&mut self) -> Result<(), IpcClientError> {
+        self.stream = IpcStream::connect("tui")?; // TODO: reuse connection
+        self.stream
+            .send_message(&Message::CliCommand(CliCommand::Ps))?;
+        if let Message::PsInfo(ps_infos) = self.stream.receive_message()? {
+            self.ps_infos = ps_infos;
+        }
+        self.stream = IpcStream::connect("tui")?;
+        self.stream
+            .send_message(&Message::CliCommand(CliCommand::Jobs))?;
+        if let Message::JobInfo(job_infos) = self.stream.receive_message()? {
+            self.job_infos = job_infos;
+        }
+        Ok(())
     }
 
     fn window(&mut self) -> &mut Window {
@@ -78,16 +99,6 @@ impl App {
         self.window().set_active(false);
         self.active_window = window_idx;
         self.window().set_active(true);
-    }
-
-    /// Run the application's main loop.
-    pub fn run(mut self, mut terminal: DefaultTerminal) -> Result<()> {
-        self.running = true;
-        while self.running {
-            terminal.draw(|frame| self.render(frame))?;
-            self.handle_crossterm_events()?;
-        }
-        Ok(())
     }
 
     /// Renders the user interface.
@@ -150,7 +161,7 @@ impl App {
     ///
     /// If your application needs to perform work in between handling events, you can use the
     /// [`event::poll`] function to check if there are any events available with a timeout.
-    fn handle_crossterm_events(&mut self) -> Result<()> {
+    fn handle_crossterm_events(&mut self) -> color_eyre::Result<()> {
         match event::read()? {
             // it's important to check KeyEventKind::Press to avoid handling key release events
             Event::Key(key) if key.kind == KeyEventKind::Press => self.on_key_event(key),

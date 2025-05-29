@@ -31,11 +31,14 @@ fn run_server() {
     start_ipc_listener(
         &socket_name,
         move |mut stream| {
-            let Ok(_connect) = stream.receive_message() else {
+            let Ok(Message::Connect) = stream.receive_message() else {
+                error!("Connect message expected - closing IPC stream");
                 return;
             };
 
+            // loop { TODO: support multiple messages from same connection
             let Ok(request) = stream.receive_message() else {
+                error!("Closing IPC stream after receive_message error");
                 return;
             };
             match request {
