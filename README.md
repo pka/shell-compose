@@ -80,6 +80,10 @@ shell-compose up autostart
 
 * [Pueue](https://github.com/Nukesor/pueue): Command-line task management tool for sequential and parallel execution of long-running tasks.
 
+* [pitchfork](https://github.com/jdx/pitchfork): Daemons with DX: long-running development processes with supervision.
+
+* [Overmind](https://github.com/DarthSim/overmind): Process manager for Procfile-based applications and tmux.
+
 To start tasks in response to file modifications, consider using [watchexec](https://github.com/watchexec/watchexec) or [Flash](https://github.com/sage-scm/Flash).
 
 For interactive background tasks, consider using [Pueue](https://github.com/Nukesor/pueue) or a terminal multiplexer like [Zellij](https://zellij.dev/), [tmux](http://tmux.github.io/) or [screen](https://www.gnu.org/software/screen/).
